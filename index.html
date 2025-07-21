@@ -5,6 +5,13 @@
     <title>Ableton Metrolink</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="styles.css">
+    <!-- 
+    Timing Synchronization Implementation:
+    - Uses Web Audio API instead of HTML5 Audio for lower latency
+    - Implements look-ahead scheduling for precise timing
+    - Calculates server-client time offset for synchronization
+    - Provides user-adjustable timing offset for fine-tuning
+    -->
 </head>
 <body>
     <div class="container">
@@ -28,11 +35,76 @@
             <button id="startBtn" onclick="sendCommand('start')">▶ Start</button>
             <button id="stopBtn" onclick="sendCommand('stop')" disabled>⏹ Stop</button>
         </div>
+        
+        <div class="settings-container">
+            <button id="settingsToggle" class="settings-toggle" onclick="toggleSettings(); return false;">
+                ⚙️ Settings
+            </button>
+            
+            <div class="sound-controls" id="settingsPanel" style="display: none;">
+                <div class="settings-header">
+                    <h3>Settings</h3>
+                    <button id="closeSettings" class="close-settings" onclick="hideSettings(); return false;">×</button>
+                </div>
+                
+                <div class="settings-section">
+                    <h4>Appearance</h4>
+                    <div class="theme-toggle">
+                        <label for="themeSwitch">Dark Theme:</label>
+                        <label class="theme-switch">
+                            <input type="checkbox" id="themeSwitch">
+                            <span class="slider">
+                                <span class="icon sun">☀️</span>
+                                <span class="icon moon">🌙</span>
+                            </span>
+                        </label>
+                    </div>
+                    
+                    <div class="fullscreen-toggle">
+                        <label for="fullscreenBtn">Fullscreen:</label>
+                        <button id="fullscreenBtn">⛶ Enter Fullscreen</button>
+                    </div>
+                </div>
+                
+                <div class="settings-section">
+                    <h4>Sound Settings</h4>
+                    <div class="sound-option">
+                        <label for="clickSound">Click Sound:</label>
+                        <select id="clickSound">
+                            <option value="click1">Standard Click</option>
+                            <option value="click2">Wooden Click</option>
+                            <option value="click3">Digital Click</option>
+                        </select>
+                    </div>
+                    
+                    <div class="volume-control">
+                        <label for="volume">Volume:</label>
+                        <input type="range" id="volume" min="0" max="1" step="0.1" value="0.5">
+                    </div>
+                    
+                    <div class="mute-control">
+                        <label for="muteBtn">Sound:</label>
+                        <button id="muteBtn" class="muted">🔇 Off</button>
+                    </div>
+                </div>
+                
+                <div class="settings-section">
+                    <h4>Timing Settings</h4>
+                    <div class="timing-control">
+                        <label for="latencyOffset">Timing Offset (ms):</label>
+                        <input type="range" id="latencyOffset" min="-100" max="100" step="5" value="50">
+                        <span id="offsetValue">50 ms</span>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
     </div>
 
     <script>
-        // Optimized mobile version
+        // Optimized mobile version and iOS detection
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent);
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
         const updateInterval = isMobile ? 100 : 50;
 
         const metronome = document.getElementById('metronome');
@@ -47,73 +119,413 @@
             document.getElementById('beat3'),
             document.getElementById('beat4')
         ];
+        
+        // Sound controls
+        const clickSoundSelect = document.getElementById('clickSound');
+        const volumeControl = document.getElementById('volume');
+        const muteBtn = document.getElementById('muteBtn');
+        
+        // Web Audio API context
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Sound buffers for the different click sounds (Web Audio API)
+        const clickSounds = {
+            click1: { high: null, low: null },
+            click2: { high: null, low: null },
+            click3: { high: null, low: null }
+        };
+        
+        // HTML5 Audio elements as fallback
+        const audioElements = {
+            click1: { 
+                high: new Audio('sounds/click1_high.wav'),
+                low: new Audio('sounds/click1_low.wav')
+            },
+            click2: { 
+                high: new Audio('sounds/click2_high.wav'),
+                low: new Audio('sounds/click2_low.wav')
+            },
+            click3: { 
+                high: new Audio('sounds/click3_high.wav'),
+                low: new Audio('sounds/click3_low.wav')
+            }
+        };
+        
+        // Function to load audio file and decode it
+        async function loadSound(url) {
+            try {
+                const response = await fetch(url);
+                const arrayBuffer = await response.arrayBuffer();
+                return await audioContext.decodeAudioData(arrayBuffer);
+            } catch (error) {
+                console.error(`Error loading sound ${url}:`, error);
+                return null;
+            }
+        }
+        
+        // Preload all sounds
+        async function preloadSounds() {
+            try {
+                console.log('Starting to preload sounds...');
+                
+                const soundFiles = [
+                    { type: 'click1', variant: 'high', url: 'sounds/click1_high.wav' },
+                    { type: 'click1', variant: 'low', url: 'sounds/click1_low.wav' },
+                    { type: 'click2', variant: 'high', url: 'sounds/click2_high.wav' },
+                    { type: 'click2', variant: 'low', url: 'sounds/click2_low.wav' },
+                    { type: 'click3', variant: 'high', url: 'sounds/click3_high.wav' },
+                    { type: 'click3', variant: 'low', url: 'sounds/click3_low.wav' }
+                ];
+                
+                // Load each sound individually to better track failures
+                let loadedCount = 0;
+                let failedCount = 0;
+                
+                for (const sound of soundFiles) {
+                    try {
+                        console.log(`Loading sound: ${sound.url}`);
+                        const buffer = await loadSound(sound.url);
+                        
+                        if (buffer) {
+                            clickSounds[sound.type][sound.variant] = buffer;
+                            loadedCount++;
+                            console.log(`Successfully loaded: ${sound.url}`);
+                        } else {
+                            failedCount++;
+                            console.error(`Failed to load sound: ${sound.url}`);
+                        }
+                    } catch (soundError) {
+                        failedCount++;
+                        console.error(`Error loading sound ${sound.url}:`, soundError);
+                    }
+                }
+                
+                console.log(`Sound loading complete. Loaded: ${loadedCount}, Failed: ${failedCount}`);
+                
+                if (loadedCount === 0) {
+                    throw new Error('No sounds were loaded successfully');
+                }
+                
+                // Check if each sound type has at least one variant loaded
+                for (const type in clickSounds) {
+                    if (!clickSounds[type].high && !clickSounds[type].low) {
+                        console.warn(`Sound type ${type} has no loaded variants`);
+                    }
+                }
+                
+                return loadedCount > 0;
+            } catch (error) {
+                console.error('Error preloading sounds:', error);
+                return false;
+            }
+        }
+        
+        // Sound settings
+        let soundSettings = {
+            currentSound: 'click1',
+            volume: 0.5,
+            muted: true, // Muted by default
+            lastBeat: null,
+            latencyOffset: 0.05  // 50ms default latency compensation
+        };
 
         let currentData = {
             position: "1.1",
             bpm: 120,
             is_downbeat: false,
-            transport_running: false
+            transport_running: false,
+            timestamp: 0
         };
+        
+        // Scheduling variables
+        let scheduledBeats = [];
+        let lookAheadTime = 0.2;  // Schedule 200ms ahead
+        let scheduleInterval = 50;  // Check schedule every 50ms
+        let lastScheduleTime = 0;
+        let serverTimeOffset = 0;  // Difference between server and client time
+        
         let lastUpdate = 0;
         let socket;
+        let scheduleTimer;
+
+        // Mock server mode flag
+        let useMockServer = false;
+        let mockServerTimer = null;
+        let mockBPM = 120;
+        let mockBar = 1;
+        let mockBeat = 1;
+        let mockTransportRunning = false;
+        
+        // Global fallback timer to force mock server mode if connection hangs
+        let globalFallbackTimer = null;
 
         function connectWebSocket() {
-            const serverIP = window.location.hostname || 'localhost';
-            socket = new WebSocket(`ws://${serverIP}:8765`);
-
-            socket.onopen = () => {
-                statusDisplay.textContent = '✅ Połączono z serwerem MIDI';
-                statusDisplay.className = '';
-                console.log('Połączenie WebSocket otwarte');
-            };
-
-            socket.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log("Received MIDI update:", data);
-
-                    // Filtruj nierealne wartości
-                    if (data.bpm < 20 || data.bpm > 300) {
-                        console.warn("Unrealistic BPM value:", data.bpm);
-                        return;
+            try {
+                // Check if we should use mock server mode
+                if (localStorage.getItem('useMockServer') === 'true') {
+                    useMockServer = true;
+                }
+                
+                // If mock server mode is enabled, use that instead of WebSocket
+                if (useMockServer) {
+                    console.log('Using mock server mode');
+                    setupMockServer();
+                    return;
+                }
+                
+                const serverIP = window.location.hostname || 'localhost';
+                socket = new WebSocket(`ws://${serverIP}:8765`);
+                
+                // Set a connection timeout - reduced to 3 seconds for faster fallback
+                const connectionTimeout = setTimeout(() => {
+                    if (socket.readyState !== WebSocket.OPEN) {
+                        console.log('WebSocket connection timeout - switching to mock server mode');
+                        try {
+                            socket.close();
+                        } catch (e) {
+                            console.error('Error closing socket:', e);
+                        }
+                        useMockServer = true;
+                        localStorage.setItem('useMockServer', 'true');
+                        setupMockServer();
                     }
+                }, 3000); // 3 second timeout
 
-                    // Aktualizuj tylko jeśli dane się zmieniły lub minął określony czas
-                    if (data.position !== currentData.position ||
-                        performance.now() - lastUpdate >= updateInterval) {
+                socket.onopen = () => {
+                    clearTimeout(connectionTimeout);
+                    statusDisplay.textContent = '✅ Połączono z serwerem MIDI';
+                    statusDisplay.className = '';
+                    console.log('Połączenie WebSocket otwarte');
+                };
 
-                        lastUpdate = performance.now();
+                socket.onmessage = async (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log("Received MIDI update:", data);
 
-                        // Wygładzanie BPM
-                        currentData.bpm = currentData.bpm
-                            ? 0.3 * data.bpm + 0.7 * currentData.bpm
-                            : data.bpm;
+                        // Filtruj nierealne wartości
+                        if (data.bpm < 20 || data.bpm > 300) {
+                            console.warn("Unrealistic BPM value:", data.bpm);
+                            return;
+                        }
+                        
+                        // Calculate server-client time offset
+                        const clientTime = performance.now() / 1000;  // Convert to seconds
+                        const serverTime = data.timestamp;
+                        
+                        // Update time offset with smoothing
+                        if (serverTimeOffset === 0) {
+                            serverTimeOffset = serverTime - clientTime;
+                        } else {
+                            // Gradually adjust the offset (90% old, 10% new)
+                            serverTimeOffset = 0.9 * serverTimeOffset + 0.1 * (serverTime - clientTime);
+                        }
 
-                        // Aktualizacja pozostałych danych
-                        currentData.position = data.position;
-                        currentData.is_downbeat = data.is_downbeat;
-                        currentData.transport_running = data.transport_running;
+                        // Aktualizuj tylko jeśli dane się zmieniły lub minął określony czas
+                        if (data.position !== currentData.position ||
+                            performance.now() - lastUpdate >= updateInterval) {
 
-                        // Wymuś natychmiastową aktualizację UI
-                        updateUI();
+                            lastUpdate = performance.now();
+
+                            // Update BPM immediately for better responsiveness
+                            // Removed excessive smoothing that was causing delays
+                            currentData.bpm = data.bpm;
+
+                            // Aktualizacja pozostałych danych
+                            currentData.position = data.position;
+                            currentData.is_downbeat = data.is_downbeat;
+                            currentData.transport_running = data.transport_running;
+                            currentData.timestamp = data.timestamp;
+
+                            // Wymuś natychmiastową aktualizację UI
+                            updateUI();
+                            
+                            // Start or stop the scheduler based on transport state
+                            if (currentData.transport_running && !scheduleTimer) {
+                                try {
+                                    await startScheduler();
+                                } catch (schedulerError) {
+                                    console.error('Error starting scheduler:', schedulerError);
+                                }
+                            } else if (!currentData.transport_running && scheduleTimer) {
+                                stopScheduler();
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Błąd przetwarzania danych MIDI:', error);
                     }
-                } catch (error) {
-                    console.error('Błąd przetwarzania danych MIDI:', error);
+                };
+
+                socket.onerror = (error) => {
+                    clearTimeout(connectionTimeout);
+                    console.error('Błąd WebSocket:', error);
+                    statusDisplay.textContent = '❌ Błąd połączenia z serwerem';
+                    statusDisplay.className = 'status-error';
+                    
+                    // Switch to mock server mode after error
+                    setTimeout(() => {
+                        useMockServer = true;
+                        localStorage.setItem('useMockServer', 'true');
+                        setupMockServer();
+                    }, 1000);
+                };
+
+                socket.onclose = () => {
+                    clearTimeout(connectionTimeout);
+                    console.log('Połączenie WebSocket zamknięte');
+                    
+                    // Only show reconnection message if not switching to mock server
+                    if (!useMockServer) {
+                        statusDisplay.textContent = '❌ Połączenie zamknięte - próba ponownego połączenia...';
+                        statusDisplay.className = 'status-error';
+                        setTimeout(connectWebSocket, 3000);
+                    }
+                };
+            } catch (error) {
+                console.error('Error in connectWebSocket:', error);
+                useMockServer = true;
+                localStorage.setItem('useMockServer', 'true');
+                setupMockServer();
+            }
+        }
+        
+        // Setup mock server functionality
+        function setupMockServer() {
+            statusDisplay.textContent = '🔄 Tryb lokalny (bez serwera)';
+            statusDisplay.className = '';
+            console.log('Mock server mode activated');
+            
+            // Create mock server controls container
+            const mockServerControls = document.createElement('div');
+            mockServerControls.style.marginTop = '15px';
+            mockServerControls.style.padding = '10px';
+            mockServerControls.style.backgroundColor = '#f8f9fa';
+            mockServerControls.style.borderRadius = '5px';
+            mockServerControls.style.border = '1px solid #ddd';
+            mockServerControls.style.display = 'flex';
+            mockServerControls.style.flexDirection = 'column';
+            mockServerControls.style.gap = '10px';
+            
+            // Add a title for the mock server controls
+            const mockServerTitle = document.createElement('div');
+            mockServerTitle.textContent = 'Ustawienia trybu lokalnego';
+            mockServerTitle.style.fontWeight = 'bold';
+            mockServerTitle.style.marginBottom = '5px';
+            mockServerControls.appendChild(mockServerTitle);
+            
+            // Add BPM control
+            const bpmControlContainer = document.createElement('div');
+            bpmControlContainer.style.display = 'flex';
+            bpmControlContainer.style.alignItems = 'center';
+            bpmControlContainer.style.gap = '10px';
+            
+            const bpmLabel = document.createElement('label');
+            bpmLabel.textContent = 'BPM:';
+            bpmLabel.style.minWidth = '50px';
+            bpmLabel.style.textAlign = 'right';
+            
+            const bpmInput = document.createElement('input');
+            bpmInput.type = 'range';
+            bpmInput.min = '60';
+            bpmInput.max = '200';
+            bpmInput.step = '1';
+            bpmInput.value = mockBPM.toString();
+            bpmInput.style.flex = '1';
+            
+            const bpmValue = document.createElement('span');
+            bpmValue.textContent = mockBPM.toString();
+            bpmValue.style.minWidth = '40px';
+            bpmValue.style.textAlign = 'center';
+            bpmValue.style.backgroundColor = '#f0f0f0';
+            bpmValue.style.padding = '2px 5px';
+            bpmValue.style.borderRadius = '3px';
+            bpmValue.style.border = '1px solid #ddd';
+            
+            bpmInput.oninput = () => {
+                const newBPM = parseInt(bpmInput.value);
+                mockBPM = newBPM;
+                bpmValue.textContent = newBPM.toString();
+                currentData.bpm = newBPM;
+                
+                // Update UI
+                updateUI();
+                
+                // If the mock server timer is running, restart it with the new BPM
+                if (mockServerTimer) {
+                    clearInterval(mockServerTimer);
+                    const beatInterval = 60000 / mockBPM; // ms per beat
+                    mockServerTimer = setInterval(mockServerTick, beatInterval);
+                    console.log(`Updated mock server BPM to ${mockBPM}, new interval: ${beatInterval}ms`);
                 }
             };
-
-            socket.onerror = (error) => {
-                console.error('Błąd WebSocket:', error);
-                statusDisplay.textContent = '❌ Błąd połączenia z serwerem';
-                statusDisplay.className = 'status-error';
+            
+            bpmControlContainer.appendChild(bpmLabel);
+            bpmControlContainer.appendChild(bpmInput);
+            bpmControlContainer.appendChild(bpmValue);
+            mockServerControls.appendChild(bpmControlContainer);
+            
+            // Add a button to toggle between mock and real server
+            const toggleServerBtn = document.createElement('button');
+            toggleServerBtn.textContent = 'Przełącz na serwer rzeczywisty';
+            toggleServerBtn.style.marginTop = '10px';
+            toggleServerBtn.style.padding = '5px 10px';
+            toggleServerBtn.style.fontSize = '0.9rem';
+            toggleServerBtn.style.backgroundColor = '#f0f0f0';
+            toggleServerBtn.style.border = '1px solid #ccc';
+            toggleServerBtn.style.borderRadius = '3px';
+            toggleServerBtn.style.cursor = 'pointer';
+            toggleServerBtn.style.alignSelf = 'center';
+            
+            toggleServerBtn.onclick = () => {
+                useMockServer = false;
+                localStorage.setItem('useMockServer', 'false');
+                if (mockServerTimer) {
+                    clearInterval(mockServerTimer);
+                    mockServerTimer = null;
+                }
+                statusDisplay.textContent = 'Łączenie z serwerem...';
+                mockServerControls.remove();
+                connectWebSocket();
             };
-
-            socket.onclose = () => {
-                console.log('Połączenie WebSocket zamknięte');
-                statusDisplay.textContent = '❌ Połączenie zamknięte - próba ponownego połączenia...';
-                statusDisplay.className = 'status-error';
-                setTimeout(connectWebSocket, 3000);
-            };
+            
+            mockServerControls.appendChild(toggleServerBtn);
+            
+            // Add the controls below the status display
+            statusDisplay.parentNode.insertBefore(mockServerControls, statusDisplay.nextSibling);
+            
+            // Initialize mock data
+            currentData.bpm = mockBPM;
+            currentData.position = `${mockBar}.${mockBeat}`;
+            currentData.is_downbeat = mockBeat === 1;
+            currentData.transport_running = mockTransportRunning;
+            currentData.timestamp = performance.now() / 1000;
+            
+            updateUI();
+        }
+        
+        // Function to simulate MIDI clock in mock server mode
+        function mockServerTick() {
+            if (!mockTransportRunning) return;
+            
+            // Update beat and bar
+            mockBeat++;
+            if (mockBeat > 4) {
+                mockBeat = 1;
+                mockBar++;
+            }
+            
+            // Update current data
+            currentData.position = `${mockBar}.${mockBeat}`;
+            currentData.is_downbeat = mockBeat === 1;
+            currentData.timestamp = performance.now() / 1000;
+            
+            // Update UI
+            updateUI();
+            
+            // Handle scheduling
+            if (mockTransportRunning && !scheduleTimer) {
+                startScheduler();
+            }
         }
 
         function updateUI() {
@@ -135,23 +547,1286 @@
             metronome.classList.remove('downbeat', 'beat');
             if (beatIndex >= 0) {
                 metronome.classList.add(currentData.is_downbeat ? 'downbeat' : 'beat');
+                
+                // Update the last beat and play sound as a final fallback
+                const currentBeat = `${bar}.${beat}`;
+                if (currentData.transport_running && currentBeat !== soundSettings.lastBeat) {
+                    // Play sound directly as a final fallback
+                    console.log(`UI update detected new beat ${currentBeat}, playing sound as final fallback`);
+                    
+                    // Try to play the sound directly (without scheduling)
+                    try {
+                        // This is a final fallback, so we'll use both methods to maximize chances of sound playing
+                        
+                        // 1. Try Web Audio API first
+                        playClickSound(currentData.is_downbeat, 0).then(success => {
+                            console.log(`UI fallback: Web Audio API sound ${success ? 'played' : 'failed'} for beat ${currentBeat}`);
+                            
+                            // 2. If Web Audio API failed or as an additional measure, try HTML5 Audio directly
+                            if (!success) {
+                                try {
+                                    // Check if sound is muted
+                                    if (soundSettings.muted) {
+                                        console.log('UI fallback: Sound is muted, not playing HTML5 Audio');
+                                        return;
+                                    }
+                                    
+                                    const audioElement = audioElements[soundSettings.currentSound];
+                                    if (audioElement) {
+                                        const sound = currentData.is_downbeat ? audioElement.high : audioElement.low;
+                                        const soundClone = sound.cloneNode();
+                                        soundClone.volume = soundSettings.volume;
+                                        
+                                        soundClone.play().then(() => {
+                                            console.log(`UI fallback: HTML5 Audio played for beat ${currentBeat}`);
+                                        }).catch(e => {
+                                            console.error(`UI fallback: HTML5 Audio failed for beat ${currentBeat}:`, e);
+                                        });
+                                    }
+                                } catch (htmlError) {
+                                    console.error(`UI fallback: HTML5 Audio error for beat ${currentBeat}:`, htmlError);
+                                }
+                            }
+                        }).catch(error => {
+                            console.error(`UI fallback: Error playing sound for beat ${currentBeat}:`, error);
+                        });
+                    } catch (error) {
+                        console.error(`UI fallback: Critical error playing sound for beat ${currentBeat}:`, error);
+                    }
+                    
+                    soundSettings.lastBeat = currentBeat;
+                }
             }
 
             // Aktualizacja stanu przycisków
             startBtn.disabled = currentData.transport_running;
             stopBtn.disabled = !currentData.transport_running;
         }
+        
+        // Start the scheduler
+        async function startScheduler() {
+            if (scheduleTimer) return; // Already running
+            
+            console.log('Starting beat scheduler...');
+            
+            // Try to ensure audio context is running before starting scheduler
+            if (audioContext.state === 'suspended') {
+                try {
+                    console.log('Audio context suspended before starting scheduler, attempting to resume...');
+                    await audioContext.resume();
+                    console.log('Audio context resumed before starting scheduler');
+                } catch (resumeError) {
+                    console.error('Failed to resume audio context before starting scheduler:', resumeError);
+                    // Continue anyway, we'll try again in scheduleNextBeat
+                }
+            }
+            
+            // Schedule the next beat immediately
+            await scheduleNextBeat();
+            
+            // Set up the scheduler to run at regular intervals
+            scheduleTimer = setInterval(async () => {
+                await scheduleNextBeat();
+            }, scheduleInterval);
+            
+            console.log('Beat scheduler started. Audio context state:', audioContext.state);
+        }
+        
+        // Stop the scheduler
+        function stopScheduler() {
+            if (scheduleTimer) {
+                clearInterval(scheduleTimer);
+                scheduleTimer = null;
+                scheduledBeats = [];
+                console.log('Beat scheduler stopped');
+            }
+        }
+        
+        // Schedule the next beat
+        async function scheduleNextBeat() {
+            if (!currentData.transport_running) {
+                console.log('Transport not running, skipping beat scheduling');
+                return;
+            }
+            
+            try {
+                // Get current time in the audio context
+                const currentTime = audioContext.currentTime;
+                
+                // Calculate when the next beat should occur
+                const secondsPerBeat = 60.0 / currentData.bpm;
+                
+                // Get the current beat position
+                const [bar, beat] = currentData.position.split('.').map(Number);
+                const currentBeatId = `${bar}.${beat}`;
+                
+                console.log(`Checking beat ${currentBeatId}, BPM: ${currentData.bpm}, is_downbeat: ${currentData.is_downbeat}`);
+                
+                // Check if this beat is already scheduled
+                if (scheduledBeats.some(b => b.id === currentBeatId)) {
+                    console.log(`Beat ${currentBeatId} already scheduled, skipping`);
+                    return;
+                }
+                
+                // Calculate the exact time when this beat should play
+                // Original calculation: Convert server timestamp to client time and add latency offset
+                let beatTime = (currentData.timestamp - serverTimeOffset) + soundSettings.latencyOffset;
+                
+                console.log(`Original beat time calculation: server timestamp ${currentData.timestamp.toFixed(3)}, offset ${serverTimeOffset.toFixed(3)}, latency ${soundSettings.latencyOffset}, result: ${beatTime.toFixed(3)}`);
+                
+                // Ensure the beat time is in the future
+                if (beatTime <= currentTime) {
+                    // If the calculated time is in the past, schedule it a small amount of time in the future
+                    const adjustedTime = currentTime + 0.1; // 100ms in the future
+                    console.log(`Beat time was in the past, adjusting from ${beatTime.toFixed(3)} to ${adjustedTime.toFixed(3)}`);
+                    beatTime = adjustedTime;
+                }
+                
+                console.log(`Final beat time: ${beatTime.toFixed(3)}`);
+                console.log(`Current audio time: ${currentTime.toFixed(3)}, look-ahead window: ${(currentTime + lookAheadTime).toFixed(3)}`);
+                
+                // Always schedule if the beat is in the future and within our look-ahead window
+                if (beatTime > currentTime && beatTime < currentTime + lookAheadTime) {
+                    console.log(`✅ Scheduling beat ${currentBeatId} for time ${beatTime.toFixed(3)}, current time: ${currentTime.toFixed(3)}`);
+                    
+                    // Try to ensure audio context is running
+                    if (audioContext.state === 'suspended') {
+                        try {
+                            console.log('Audio context suspended before scheduling, attempting to resume...');
+                            await audioContext.resume();
+                            console.log('Audio context resumed before scheduling');
+                        } catch (resumeError) {
+                            console.error('Failed to resume audio context before scheduling:', resumeError);
+                        }
+                    }
+                    
+                    // Schedule the sound (now async)
+                    console.log(`Calling playClickSound for beat ${currentBeatId}, is_downbeat: ${currentData.is_downbeat}, time: ${beatTime.toFixed(3)}`);
+                    const soundPlayed = await playClickSound(currentData.is_downbeat, beatTime);
+                    
+                    // Add to scheduled beats
+                    scheduledBeats.push({
+                        id: currentBeatId,
+                        time: beatTime,
+                        scheduled: true,
+                        soundPlayed: soundPlayed
+                    });
+                    
+                    console.log(`Beat ${currentBeatId} scheduled${soundPlayed ? ' and sound queued' : ' but sound failed'}`);
+                    
+                    // If Web Audio API scheduling failed, try immediate HTML5 Audio fallback
+                    if (!soundPlayed) {
+                        console.log(`Web Audio API scheduling failed for beat ${currentBeatId}, trying immediate HTML5 Audio fallback`);
+                        try {
+                            // Check if sound is muted
+                            if (soundSettings.muted) {
+                                console.log(`Scheduler fallback: Sound is muted, not playing HTML5 Audio for beat ${currentBeatId}`);
+                                return;
+                            }
+                            
+                            // Get the HTML5 Audio element
+                            const audioElement = audioElements[soundSettings.currentSound];
+                            if (audioElement) {
+                                // Choose high or low sound
+                                const sound = currentData.is_downbeat ? audioElement.high : audioElement.low;
+                                
+                                // Clone the audio to allow overlapping sounds
+                                const soundClone = sound.cloneNode();
+                                soundClone.volume = soundSettings.volume;
+                                
+                                // Play immediately
+                                soundClone.play().then(() => {
+                                    console.log(`Immediate HTML5 Audio fallback played for beat ${currentBeatId}`);
+                                }).catch(error => {
+                                    console.error(`Immediate HTML5 Audio fallback failed for beat ${currentBeatId}:`, error);
+                                });
+                            }
+                        } catch (fallbackError) {
+                            console.error(`Error in immediate HTML5 Audio fallback for beat ${currentBeatId}:`, fallbackError);
+                        }
+                    }
+                    
+                    // Clean up old scheduled beats
+                    const now = audioContext.currentTime;
+                    scheduledBeats = scheduledBeats.filter(beat => beat.time > now - 1);
+                } else {
+                    console.log(`❌ Beat ${currentBeatId} not scheduled: time ${beatTime.toFixed(3)} is ${beatTime <= currentTime ? 'in the past' : 'beyond look-ahead window'}`);
+                }
+            } catch (error) {
+                console.error('Error in scheduleNextBeat:', error);
+            }
+        }
+        
+        // Function to play the selected click sound with Web Audio API
+        async function playClickSound(isDownbeat, scheduleTime = 0) {
+            console.log(`playClickSound called with muted=${soundSettings.muted}`);
+            if (soundSettings.muted) {
+                console.log('Sound is muted, not playing sound');
+                return false;
+            }
+            
+            try {
+                // Check audio context state and try to resume if suspended
+                if (audioContext.state === 'suspended') {
+                    console.log('Audio context is suspended, attempting to resume...');
+                    try {
+                        await audioContext.resume();
+                        console.log('Audio context resumed successfully');
+                        
+                        // For iOS, unlock audio elements as well
+                        if (isIOS) {
+                            unlockIOSAudio();
+                        }
+                    } catch (resumeError) {
+                        console.error('Failed to resume audio context:', resumeError);
+                        // Continue to fallback method
+                    }
+                }
+                
+                // Get the selected sound pair
+                const soundPair = clickSounds[soundSettings.currentSound];
+                
+                if (!soundPair) {
+                    console.error('Selected sound not found:', soundSettings.currentSound);
+                    return false;
+                }
+                
+                // Choose high sound for downbeat, low sound for other beats
+                const buffer = isDownbeat ? soundPair.high : soundPair.low;
+                
+                // If the preferred buffer is not available, try to use the other one
+                let finalBuffer = buffer;
+                if (!finalBuffer) {
+                    console.warn(`${isDownbeat ? 'High' : 'Low'} sound buffer not loaded for ${soundSettings.currentSound}, trying alternative...`);
+                    finalBuffer = isDownbeat ? soundPair.low : soundPair.high;
+                }
+                
+                // iOS-specific handling - prioritize HTML5 Audio on iOS
+                if (isIOS) {
+                    try {
+                        // Get the HTML5 Audio element
+                        const audioElement = audioElements[soundSettings.currentSound];
+                        if (!audioElement) {
+                            console.error('HTML5 Audio element not found for:', soundSettings.currentSound);
+                            // Fall back to Web Audio API if HTML5 Audio is not available
+                        } else {
+                            // Choose high or low sound
+                            const sound = isDownbeat ? audioElement.high : audioElement.low;
+                            
+                            // Clone the audio to allow overlapping sounds
+                            const soundClone = sound.cloneNode();
+                            soundClone.volume = soundSettings.volume;
+                            
+                            console.log(`Using HTML5 Audio for iOS ${isDownbeat ? 'downbeat' : 'regular beat'} sound`);
+                            
+                            // Play immediately (HTML5 Audio doesn't support precise scheduling)
+                            try {
+                                await soundClone.play();
+                                return true;
+                            } catch (iosAudioError) {
+                                console.error('iOS HTML5 Audio playback failed:', iosAudioError);
+                                // Try Web Audio API as fallback
+                            }
+                        }
+                    } catch (iosError) {
+                        console.error('iOS audio handling error:', iosError);
+                        // Continue to Web Audio API
+                    }
+                }
+                
+                // Try Web Audio API
+                if (finalBuffer && audioContext.state === 'running') {
+                    try {
+                        // Create audio source
+                        const source = audioContext.createBufferSource();
+                        source.buffer = finalBuffer;
+                        
+                        // Create gain node for volume control
+                        const gainNode = audioContext.createGain();
+                        gainNode.gain.value = soundSettings.volume;
+                        
+                        // Connect nodes
+                        source.connect(gainNode);
+                        gainNode.connect(audioContext.destination);
+                        
+                        // Calculate playback time
+                        const playTime = scheduleTime > 0 ? scheduleTime : audioContext.currentTime;
+                        
+                        // Log the playback attempt
+                        console.log(`Playing ${isDownbeat ? 'downbeat' : 'regular beat'} sound with Web Audio API at time ${playTime.toFixed(3)}`);
+                        
+                        // Start the source
+                        source.start(playTime);
+                        
+                        return true;
+                    } catch (webAudioError) {
+                        console.error('Web Audio API playback failed:', webAudioError);
+                        // Fall back to HTML5 Audio
+                    }
+                }
+                
+                // Fallback to HTML5 Audio if Web Audio API failed or is not available
+                try {
+                    // Get the HTML5 Audio element
+                    const audioElement = audioElements[soundSettings.currentSound];
+                    if (!audioElement) {
+                        console.error('HTML5 Audio element not found for:', soundSettings.currentSound);
+                        return false;
+                    }
+                    
+                    // Choose high or low sound
+                    const sound = isDownbeat ? audioElement.high : audioElement.low;
+                    
+                    // Clone the audio to allow overlapping sounds
+                    const soundClone = sound.cloneNode();
+                    soundClone.volume = soundSettings.volume;
+                    
+                    console.log(`Falling back to HTML5 Audio for ${isDownbeat ? 'downbeat' : 'regular beat'} sound`);
+                    
+                    // Play immediately (HTML5 Audio doesn't support precise scheduling)
+                    try {
+                        await soundClone.play();
+                        return true;
+                    } catch (htmlAudioError) {
+                        console.error('HTML5 Audio playback failed:', htmlAudioError);
+                        return false;
+                    }
+                } catch (fallbackError) {
+                    console.error('All audio playback methods failed:', fallbackError);
+                    return false;
+                }
+            } catch (error) {
+                console.error('Error in playClickSound:', error);
+                return false;
+            }
+        }
+        
+        // Event listeners for sound controls are defined later with saveSettings functionality
+        
+        
+        // Latency offset control
+        const latencyOffsetControl = document.getElementById('latencyOffset');
+        const offsetValueDisplay = document.getElementById('offsetValue');
+        
+        latencyOffsetControl.addEventListener('input', () => {
+            const offsetMs = parseInt(latencyOffsetControl.value);
+            soundSettings.latencyOffset = offsetMs / 1000; // Convert ms to seconds
+            offsetValueDisplay.textContent = `${offsetMs} ms`;
+            
+            // Log the change
+            console.log(`Latency offset set to ${offsetMs} ms`);
+        });
 
         function sendCommand(type) {
+            if (useMockServer) {
+                // Handle commands in mock server mode
+                console.log(`Mock server command: ${type}`);
+                
+                if (type === 'start') {
+                    mockTransportRunning = true;
+                    currentData.transport_running = true;
+                    
+                    // Reset counters if needed
+                    if (!mockServerTimer) {
+                        mockBar = 1;
+                        mockBeat = 1;
+                        currentData.position = `${mockBar}.${mockBeat}`;
+                        currentData.is_downbeat = true;
+                        currentData.timestamp = performance.now() / 1000;
+                        
+                        // Start the mock server timer to simulate MIDI clock
+                        const beatInterval = 60000 / mockBPM; // ms per beat
+                        mockServerTimer = setInterval(mockServerTick, beatInterval);
+                        
+                        console.log(`Started mock server with BPM: ${mockBPM}, interval: ${beatInterval}ms`);
+                    }
+                    
+                    updateUI();
+                    
+                    // Start the scheduler
+                    if (!scheduleTimer) {
+                        startScheduler();
+                    }
+                } else if (type === 'stop') {
+                    mockTransportRunning = false;
+                    currentData.transport_running = false;
+                    
+                    // Stop the mock server timer
+                    if (mockServerTimer) {
+                        clearInterval(mockServerTimer);
+                        mockServerTimer = null;
+                    }
+                    
+                    updateUI();
+                    
+                    // Stop the scheduler
+                    if (scheduleTimer) {
+                        stopScheduler();
+                    }
+                }
+                
+                return;
+            }
+            
+            // Real server mode
             if (socket && socket.readyState === WebSocket.OPEN) {
                 socket.send(JSON.stringify({ type }));
                 console.log(`Wysłano komendę: ${type}`);
             } else {
                 console.error('Połączenie WebSocket nie jest otwarte');
+                
+                // Fallback to mock server if real server is not available
+                useMockServer = true;
+                localStorage.setItem('useMockServer', 'true');
+                setupMockServer();
+                
+                // Retry the command with mock server
+                setTimeout(() => sendCommand(type), 100);
             }
         }
 
-        // Inicjalizacja połączenia
+        // Resume audio context on user interaction (required by browsers, especially iOS)
+        function resumeAudioContext() {
+            console.log('User interaction detected, audio context state:', audioContext.state);
+            
+            if (audioContext.state === 'suspended') {
+                audioContext.resume().then(() => {
+                    console.log('AudioContext resumed after user interaction');
+                    
+                    // Play a silent sound to fully activate audio
+                    playSilentSound();
+                    
+                    // For iOS, we need to unlock audio elements as well
+                    if (isIOS) {
+                        unlockIOSAudio();
+                    }
+                }).catch(error => {
+                    console.error('Error resuming AudioContext:', error);
+                    
+                    // If Web Audio API fails, try to at least unlock HTML5 Audio on iOS
+                    if (isIOS) {
+                        unlockIOSAudio();
+                    }
+                });
+            } else {
+                // Even if the context is running, play a silent sound to ensure activation
+                playSilentSound();
+                
+                // For iOS, we need to unlock audio elements as well
+                if (isIOS) {
+                    unlockIOSAudio();
+                }
+            }
+        }
+        
+        // Play a silent sound to help activate the audio context
+        function playSilentSound() {
+            try {
+                // Create a short silent buffer
+                const buffer = audioContext.createBuffer(1, 1, 22050);
+                const source = audioContext.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioContext.destination);
+                source.start(0);
+                console.log('Silent sound played to activate audio context');
+            } catch (error) {
+                console.error('Error playing silent sound:', error);
+            }
+        }
+        
+        // Unlock audio on iOS devices
+        function unlockIOSAudio() {
+            console.log('Attempting to unlock iOS audio...');
+            
+            // Create temporary audio elements for each sound and play them
+            for (const soundType in audioElements) {
+                try {
+                    // Play a short silent sound on each audio element
+                    const highSound = audioElements[soundType].high;
+                    const lowSound = audioElements[soundType].low;
+                    
+                    // Set volume to 0 to make it silent
+                    highSound.volume = 0;
+                    lowSound.volume = 0;
+                    
+                    // iOS requires playing inside a user gesture handler
+                    const playPromiseHigh = highSound.play();
+                    if (playPromiseHigh) {
+                        playPromiseHigh.catch(e => {
+                            console.log(`iOS unlock: Couldn't play high sound for ${soundType}:`, e);
+                        });
+                    }
+                    
+                    const playPromiseLow = lowSound.play();
+                    if (playPromiseLow) {
+                        playPromiseLow.catch(e => {
+                            console.log(`iOS unlock: Couldn't play low sound for ${soundType}:`, e);
+                        });
+                    }
+                    
+                    // Pause immediately
+                    setTimeout(() => {
+                        try {
+                            highSound.pause();
+                            highSound.currentTime = 0;
+                            lowSound.pause();
+                            lowSound.currentTime = 0;
+                        } catch (e) {
+                            console.error('Error pausing temporary sounds:', e);
+                        }
+                    }, 10);
+                    
+                    console.log(`Attempted to unlock audio for ${soundType}`);
+                } catch (e) {
+                    console.error(`Error unlocking iOS audio for ${soundType}:`, e);
+                }
+            }
+        }
+        
+        // Add event listeners to resume audio context
+        document.addEventListener('click', resumeAudioContext);
+        document.addEventListener('touchstart', resumeAudioContext);
+        
+        // Audio will be muted by default and can be enabled through settings
+        
+        // Settings panel toggle functionality
+        const settingsToggle = document.getElementById('settingsToggle');
+        const settingsPanel = document.getElementById('settingsPanel');
+        const closeSettings = document.getElementById('closeSettings');
+        
+        console.log('Settings elements:', {
+            settingsToggle: settingsToggle,
+            settingsPanel: settingsPanel,
+            closeSettings: closeSettings
+        });
+        
+        // Function to show settings panel
+        function showSettings() {
+            console.log('Showing settings panel');
+            try {
+                if (!settingsPanel) {
+                    console.error('Settings panel element not found in showSettings');
+                    return;
+                }
+                
+                // Force display to flex
+                settingsPanel.style.display = 'flex';
+                
+                // Double-check that it worked
+                setTimeout(() => {
+                    if (getComputedStyle(settingsPanel).display === 'none') {
+                        console.warn('Settings panel still hidden after showSettings, forcing display again');
+                        settingsPanel.style.cssText = 'display: flex !important';
+                    } else {
+                        console.log('Settings panel is now visible');
+                    }
+                }, 50);
+                
+                // Save state to localStorage
+                localStorage.setItem('settingsOpen', 'true');
+            } catch (error) {
+                console.error('Error in showSettings:', error);
+            }
+        }
+        
+        // Function to hide settings panel
+        function hideSettings() {
+            console.log('Hiding settings panel');
+            try {
+                if (!settingsPanel) {
+                    console.error('Settings panel element not found in hideSettings');
+                    return;
+                }
+                
+                // Force display to none
+                settingsPanel.style.display = 'none';
+                
+                // Save state to localStorage
+                localStorage.setItem('settingsOpen', 'false');
+            } catch (error) {
+                console.error('Error in hideSettings:', error);
+            }
+        }
+        
+        // Toggle settings panel when button is clicked (backup event listener)
+        if (settingsToggle) {
+            settingsToggle.addEventListener('click', (e) => {
+                console.log('Settings toggle clicked via event listener');
+                e.preventDefault(); // Prevent any default behavior
+                
+                try {
+                    // More robust check for display state
+                    const isHidden = settingsPanel.style.display === 'none' || 
+                                     getComputedStyle(settingsPanel).display === 'none' ||
+                                     !settingsPanel.offsetParent;
+                    
+                    console.log('Settings panel is hidden (event listener check):', isHidden);
+                    
+                    if (isHidden) {
+                        showSettings();
+                    } else {
+                        hideSettings();
+                    }
+                } catch (error) {
+                    console.error('Error in settings toggle event listener:', error);
+                }
+            });
+            console.log('Added click event listener to settings toggle button');
+        } else {
+            console.error('Settings toggle button not found');
+        }
+        
+        // Close settings when close button is clicked (backup event listener)
+        if (closeSettings) {
+            closeSettings.addEventListener('click', (e) => {
+                console.log('Close settings button clicked via event listener');
+                e.preventDefault(); // Prevent any default behavior
+                hideSettings();
+            });
+            console.log('Added click event listener to close settings button');
+        } else {
+            console.error('Close settings button not found');
+        }
+        
+        // Force initialize settings panel display state
+        if (settingsPanel) {
+            // Ensure the initial state is explicitly set
+            settingsPanel.style.display = 'none';
+            console.log('Initialized settings panel display state to none');
+        } else {
+            console.error('Settings panel not found during initial display state setup');
+        }
+        
+        // Global function for direct onclick handler
+        function toggleSettings() {
+            console.log('toggleSettings function called directly');
+            
+            try {
+                if (!settingsPanel) {
+                    console.error('Settings panel not found in toggleSettings function');
+                    // Try to get it again in case it wasn't available earlier
+                    const panelElement = document.getElementById('settingsPanel');
+                    if (!panelElement) {
+                        console.error('Settings panel still not found after retry');
+                        return;
+                    }
+                    console.log('Settings panel found on retry');
+                    // Update the global reference
+                    window.settingsPanel = panelElement;
+                }
+                
+                // Check if panel is currently visible - use multiple methods for robustness
+                let isVisible = false;
+                
+                try {
+                    // Method 1: Check style.display
+                    if (settingsPanel.style.display === 'flex') {
+                        isVisible = true;
+                    }
+                    
+                    // Method 2: Check computed style
+                    else if (getComputedStyle(settingsPanel).display !== 'none') {
+                        isVisible = true;
+                    }
+                    
+                    // Method 3: Check offsetParent
+                    else if (settingsPanel.offsetParent !== null) {
+                        isVisible = true;
+                    }
+                } catch (checkError) {
+                    console.error('Error checking panel visibility:', checkError);
+                }
+                
+                console.log('Settings panel is visible (direct check):', isVisible);
+                
+                // Toggle visibility
+                if (isVisible) {
+                    console.log('Hiding settings panel via toggleSettings');
+                    settingsPanel.style.display = 'none';
+                    localStorage.setItem('settingsOpen', 'false');
+                } else {
+                    console.log('Showing settings panel via toggleSettings');
+                    settingsPanel.style.display = 'flex';
+                    localStorage.setItem('settingsOpen', 'true');
+                    
+                    // Double-check that it worked
+                    setTimeout(() => {
+                        if (getComputedStyle(settingsPanel).display === 'none') {
+                            console.warn('Settings panel still hidden after toggle, forcing display');
+                            settingsPanel.style.cssText = 'display: flex !important';
+                        }
+                    }, 50);
+                }
+            } catch (error) {
+                console.error('Error in toggleSettings function:', error);
+                alert('There was an error toggling the settings panel. Please try again or reload the page.');
+            }
+        }
+        
+        // Theme switching functionality
+        const themeSwitch = document.getElementById('themeSwitch');
+        
+        // Function to set theme
+        function setTheme(isDark) {
+            if (isDark) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                themeSwitch.checked = true;
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+                themeSwitch.checked = false;
+            }
+        }
+        
+        // Toggle theme when switch is clicked
+        themeSwitch.addEventListener('change', () => {
+            setTheme(themeSwitch.checked);
+            localStorage.setItem('darkTheme', themeSwitch.checked);
+        });
+        
+        // Fullscreen functionality
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const container = document.querySelector('.container');
+        let isFullscreen = false;
+        let fullscreenExitBtn = null;
+        
+        // Function to enter fullscreen mode
+        function enterFullscreen() {
+            console.log('Entering fullscreen mode');
+            
+            // Add fullscreen class to container
+            container.classList.add('fullscreen-mode');
+            
+            // Create exit fullscreen button
+            fullscreenExitBtn = document.createElement('button');
+            fullscreenExitBtn.className = 'fullscreen-exit';
+            fullscreenExitBtn.innerHTML = '⬉ Exit Fullscreen';
+            fullscreenExitBtn.addEventListener('click', exitFullscreen);
+            container.appendChild(fullscreenExitBtn);
+            
+            // Hide settings panel if open
+            if (settingsPanel.style.display !== 'none') {
+                hideSettings();
+            }
+            
+            // Update button text
+            fullscreenBtn.textContent = '⛶ Exit Fullscreen';
+            
+            // Use Fullscreen API if available
+            if (container.requestFullscreen) {
+                container.requestFullscreen().catch(err => {
+                    console.error('Error attempting to enable fullscreen:', err);
+                });
+            } else if (container.mozRequestFullScreen) { // Firefox
+                container.mozRequestFullScreen();
+            } else if (container.webkitRequestFullscreen) { // Chrome, Safari, Opera
+                container.webkitRequestFullscreen();
+            } else if (container.msRequestFullscreen) { // IE/Edge
+                container.msRequestFullscreen();
+            }
+            
+            isFullscreen = true;
+            localStorage.setItem('isFullscreen', 'true');
+        }
+        
+        // Function to exit fullscreen mode
+        function exitFullscreen() {
+            console.log('Exiting fullscreen mode');
+            
+            // Remove fullscreen class from container
+            container.classList.remove('fullscreen-mode');
+            
+            // Remove exit fullscreen button
+            if (fullscreenExitBtn) {
+                fullscreenExitBtn.remove();
+                fullscreenExitBtn = null;
+            }
+            
+            // Update button text
+            fullscreenBtn.textContent = '⛶ Enter Fullscreen';
+            
+            // Exit fullscreen using API if needed
+            if (document.fullscreenElement || 
+                document.webkitFullscreenElement || 
+                document.mozFullScreenElement ||
+                document.msFullscreenElement) {
+                
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.mozCancelFullScreen) { // Firefox
+                    document.mozCancelFullScreen();
+                } else if (document.webkitExitFullscreen) { // Chrome, Safari, Opera
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) { // IE/Edge
+                    document.msExitFullscreen();
+                }
+            }
+            
+            isFullscreen = false;
+            localStorage.setItem('isFullscreen', 'false');
+        }
+        
+        // Toggle fullscreen when button is clicked
+        fullscreenBtn.addEventListener('click', () => {
+            if (isFullscreen) {
+                exitFullscreen();
+            } else {
+                enterFullscreen();
+            }
+        });
+        
+        // Handle fullscreen change events
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+        document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+        
+        function handleFullscreenChange() {
+            // If user exits fullscreen using browser controls (Esc key)
+            if (!document.fullscreenElement && 
+                !document.webkitFullscreenElement && 
+                !document.mozFullScreenElement &&
+                !document.msFullscreenElement && 
+                isFullscreen) {
+                
+                exitFullscreen();
+            }
+        }
+        
+        // Load fullscreen state from localStorage
+        function loadFullscreenState() {
+            const savedFullscreen = localStorage.getItem('isFullscreen') === 'true';
+            if (savedFullscreen) {
+                enterFullscreen();
+            }
+        }
+        
+        // Save settings to localStorage
+        function saveSettings() {
+            const settings = {
+                currentSound: soundSettings.currentSound,
+                volume: soundSettings.volume,
+                muted: soundSettings.muted,
+                latencyOffset: soundSettings.latencyOffset,
+                darkTheme: themeSwitch.checked
+            };
+            localStorage.setItem('metronomeSettings', JSON.stringify(settings));
+            console.log('Settings saved to localStorage:', settings);
+        }
+        
+        // Load settings from localStorage
+        function loadSettings() {
+            console.log('Loading settings from localStorage...');
+            
+            // Skip loading if settings have already been loaded by loadSettingsImmediately
+            if (settingsAlreadyLoaded) {
+                console.log('Settings already loaded immediately, skipping loadSettings');
+                
+                // Just check if settings panel should be open
+                const settingsOpen = localStorage.getItem('settingsOpen') === 'true';
+                if (settingsOpen) {
+                    console.log('Settings panel should be open, showing it');
+                    setTimeout(() => {
+                        try {
+                            showSettings();
+                        } catch (e) {
+                            console.error('Error showing settings panel:', e);
+                        }
+                    }, 100);
+                }
+                
+                return;
+            }
+            
+            console.log('Settings not loaded yet, loading from loadSettings');
+            
+            // First check for standalone theme setting (for backward compatibility)
+            const darkTheme = localStorage.getItem('darkTheme') === 'true';
+            setTheme(darkTheme);
+            
+            const savedSettings = localStorage.getItem('metronomeSettings');
+            if (savedSettings) {
+                try {
+                    const settings = JSON.parse(savedSettings);
+                    console.log('Loading settings from localStorage:', settings);
+                    
+                    // Update sound settings
+                    if (settings.currentSound) {
+                        soundSettings.currentSound = settings.currentSound;
+                        clickSoundSelect.value = settings.currentSound;
+                    }
+                    
+                    if (settings.volume !== undefined) {
+                        soundSettings.volume = settings.volume;
+                        volumeControl.value = settings.volume;
+                    }
+                    
+                    if (settings.muted !== undefined) {
+                        soundSettings.muted = settings.muted;
+                        muteBtn.textContent = soundSettings.muted ? '🔇 Off' : '🔊 On';
+                        muteBtn.classList.toggle('muted', soundSettings.muted);
+                    }
+                    
+                    if (settings.latencyOffset !== undefined) {
+                        soundSettings.latencyOffset = settings.latencyOffset;
+                        const offsetMs = Math.round(settings.latencyOffset * 1000);
+                        latencyOffsetControl.value = offsetMs;
+                        offsetValueDisplay.textContent = `${offsetMs} ms`;
+                    }
+                    
+                    // Apply theme setting from saved settings
+                    if (settings.darkTheme !== undefined) {
+                        console.log('Applying theme from saved settings');
+                        setTheme(settings.darkTheme);
+                    }
+                } catch (error) {
+                    console.error('Error loading settings from localStorage:', error);
+                }
+            }
+            
+            // Check if settings panel should be open
+            const settingsOpen = localStorage.getItem('settingsOpen') === 'true';
+            console.log('Settings panel should be open:', settingsOpen);
+            
+            // Ensure settings panel exists and has proper initial state
+            try {
+                // Try to get the settings panel again in case it wasn't available earlier
+                const panelElement = document.getElementById('settingsPanel');
+                
+                if (panelElement) {
+                    console.log('Settings panel found during loadSettings');
+                    
+                    // Update the global reference if needed
+                    if (!settingsPanel) {
+                        console.log('Updating global settingsPanel reference');
+                        window.settingsPanel = panelElement;
+                    }
+                    
+                    // Force initial state to be hidden
+                    panelElement.style.display = 'none';
+                    console.log('Forced settings panel display to none during loadSettings');
+                    
+                    // Then show if needed, with a longer delay to ensure DOM is fully ready
+                    if (settingsOpen) {
+                        console.log('Will open settings panel during initialization');
+                        setTimeout(() => {
+                            try {
+                                console.log('Delayed opening of settings panel');
+                                showSettings();
+                                
+                                // Double-check after a short delay
+                                setTimeout(() => {
+                                    try {
+                                        if (getComputedStyle(panelElement).display === 'none') {
+                                            console.warn('Settings panel still hidden after delayed open, forcing display');
+                                            panelElement.style.cssText = 'display: flex !important';
+                                        }
+                                    } catch (e) {
+                                        console.error('Error in double-check after delayed open:', e);
+                                    }
+                                }, 100);
+                            } catch (e) {
+                                console.error('Error in delayed opening of settings panel:', e);
+                            }
+                        }, 1000); // Longer delay to ensure DOM is fully ready
+                    }
+                } else {
+                    console.error('Settings panel not found during loadSettings, even after retry');
+                }
+            } catch (error) {
+                console.error('Error handling settings panel in loadSettings:', error);
+            }
+        }
+        
+        // Update theme switch event listener to save all settings
+        themeSwitch.addEventListener('change', () => {
+            setTheme(themeSwitch.checked);
+            saveSettings();
+        });
+        
+        // Update event listeners to save settings
+        clickSoundSelect.addEventListener('change', () => {
+            soundSettings.currentSound = clickSoundSelect.value;
+            saveSettings();
+        });
+        
+        volumeControl.addEventListener('input', () => {
+            soundSettings.volume = parseFloat(volumeControl.value);
+            saveSettings();
+        });
+        
+        muteBtn.addEventListener('click', () => {
+            soundSettings.muted = !soundSettings.muted;
+            muteBtn.textContent = soundSettings.muted ? '🔇 Off' : '🔊 On';
+            muteBtn.classList.toggle('muted', soundSettings.muted);
+            saveSettings();
+        });
+        
+        latencyOffsetControl.addEventListener('input', () => {
+            const offsetMs = parseInt(latencyOffsetControl.value);
+            soundSettings.latencyOffset = offsetMs / 1000; // Convert ms to seconds
+            offsetValueDisplay.textContent = `${offsetMs} ms`;
+            
+            // Log the change
+            console.log(`Latency offset set to ${offsetMs} ms`);
+            saveSettings();
+        });
+        
+        // Initialize sounds and connection
+        async function initialize() {
+            console.log('Initializing application...');
+            
+            try {
+                // Connect to WebSocket server first to ensure immediate connection
+                console.log('Connecting to WebSocket server during initialization...');
+                connectWebSocket();
+                
+                console.log('Audio context state:', audioContext.state);
+                
+                // Try to resume audio context immediately (might work if user has interacted)
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                    console.log('Audio context resumed during initialization');
+                }
+                
+                // Load saved settings
+                loadSettings();
+                
+                // Load fullscreen state
+                loadFullscreenState();
+                
+                // Preload sounds after connection and settings are loaded
+                await preloadSounds();
+                
+                // Set a global fallback timer to force mock server mode if connection hangs
+                if (globalFallbackTimer) {
+                    clearTimeout(globalFallbackTimer);
+                }
+                
+                globalFallbackTimer = setTimeout(() => {
+                    console.log('Global fallback timer triggered - checking connection status');
+                    
+                    // If status still shows connecting, force mock server mode
+                    if (statusDisplay.textContent === 'Connecting...' || 
+                        statusDisplay.textContent === 'Łączenie z serwerem...') {
+                        console.log('Still in connecting state after timeout - forcing mock server mode');
+                        
+                        // Force mock server mode
+                        if (!useMockServer) {
+                            useMockServer = true;
+                            localStorage.setItem('useMockServer', 'true');
+                            
+                            // Close socket if it exists
+                            if (socket) {
+                                try {
+                                    socket.close();
+                                } catch (e) {
+                                    console.error('Error closing socket in global fallback:', e);
+                                }
+                            }
+                            
+                            // Setup mock server
+                            setupMockServer();
+                        }
+                    } else {
+                        console.log('Connection status is not in connecting state:', statusDisplay.textContent);
+                    }
+                }, 5000); // 5 second global fallback
+                
+                console.log('Initialization complete. Audio context state:', audioContext.state);
+                
+                // Final check for settings panel functionality
+                setTimeout(() => {
+                    try {
+                        console.log('Final settings panel check...');
+                        const panel = document.getElementById('settingsPanel');
+                        if (panel) {
+                            const displayStyle = getComputedStyle(panel).display;
+                            console.log('Settings panel final state:', {
+                                element: panel,
+                                displayStyle: displayStyle,
+                                offsetParent: panel.offsetParent,
+                                shouldBeOpen: localStorage.getItem('settingsOpen') === 'true'
+                            });
+                            
+                            // If there's a mismatch between expected and actual state, try to fix it
+                            const shouldBeOpen = localStorage.getItem('settingsOpen') === 'true';
+                            const isOpen = displayStyle !== 'none' && panel.offsetParent !== null;
+                            
+                            if (shouldBeOpen && !isOpen) {
+                                console.warn('Settings panel should be open but is not, forcing open');
+                                panel.style.cssText = 'display: flex !important';
+                            } else if (!shouldBeOpen && isOpen) {
+                                console.warn('Settings panel should be closed but is open, forcing close');
+                                panel.style.display = 'none';
+                            }
+                            
+                            // Add a click handler directly to the settings toggle button as a final fallback
+                            const toggle = document.getElementById('settingsToggle');
+                            if (toggle) {
+                                console.log('Adding direct click handler to settings toggle button');
+                                toggle.onclick = function(e) {
+                                    console.log('Settings toggle clicked via direct handler');
+                                    toggleSettings();
+                                    return false;
+                                };
+                            }
+                            
+                            // Add a click handler directly to the close button as a final fallback
+                            const closeBtn = document.getElementById('closeSettings');
+                            if (closeBtn) {
+                                console.log('Adding direct click handler to close settings button');
+                                closeBtn.onclick = function(e) {
+                                    console.log('Close settings button clicked via direct handler');
+                                    hideSettings();
+                                    return false;
+                                };
+                            }
+                        } else {
+                            console.error('Settings panel not found in final check');
+                        }
+                    } catch (e) {
+                        console.error('Error in final settings panel check:', e);
+                    }
+                }, 2000); // Check after 2 seconds to ensure everything is loaded
+            } catch (error) {
+                console.error('Error during initialization:', error);
+            }
+        }
+        
+        // Start initialization as soon as the DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM fully loaded - starting initialization immediately');
+            initialize();
+        });
+        
+        // Also start initialization now in case DOMContentLoaded has already fired
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            console.log('Document already loaded - starting initialization immediately');
+            initialize();
+        }
+        
+        // Flag to track if settings have been loaded
+        let settingsAlreadyLoaded = false;
+        
+        // Load and apply critical settings immediately, even before DOM is fully loaded
+        function loadSettingsImmediately() {
+            try {
+                console.log('Loading critical settings immediately...');
+                
+                // Load saved settings
+                const savedSettings = localStorage.getItem('metronomeSettings');
+                let parsedSettings = null;
+                
+                // First check for standalone theme setting (for backward compatibility)
+                const darkTheme = localStorage.getItem('darkTheme') === 'true';
+                
+                if (savedSettings) {
+                    try {
+                        parsedSettings = JSON.parse(savedSettings);
+                        console.log('Parsed saved settings:', parsedSettings);
+                    } catch (e) {
+                        console.error('Error parsing saved settings:', e);
+                    }
+                }
+                
+                // Apply theme (prefer settings over standalone)
+                const finalTheme = parsedSettings && parsedSettings.darkTheme !== undefined 
+                    ? parsedSettings.darkTheme 
+                    : darkTheme;
+                
+                console.log('Applying theme immediately, isDark:', finalTheme);
+                
+                if (finalTheme) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
+                
+                // Initialize sound settings with defaults
+                if (!window.soundSettings) {
+                    window.soundSettings = {
+                        currentSound: 'click1',
+                        volume: 0.5,
+                        muted: true,
+                        latencyOffset: 0.05
+                    };
+                }
+                
+                // Apply sound settings if available
+                if (parsedSettings) {
+                    if (parsedSettings.currentSound) {
+                        window.soundSettings.currentSound = parsedSettings.currentSound;
+                    }
+                    
+                    if (parsedSettings.volume !== undefined) {
+                        window.soundSettings.volume = parsedSettings.volume;
+                    }
+                    
+                    if (parsedSettings.muted !== undefined) {
+                        window.soundSettings.muted = parsedSettings.muted;
+                    }
+                    
+                    if (parsedSettings.latencyOffset !== undefined) {
+                        window.soundSettings.latencyOffset = parsedSettings.latencyOffset;
+                    }
+                }
+                
+                // Update UI elements when they become available
+                setTimeout(() => {
+                    try {
+                        // Update theme switch
+                        const themeSwitch = document.getElementById('themeSwitch');
+                        if (themeSwitch) {
+                            themeSwitch.checked = finalTheme;
+                        }
+                        
+                        // Update sound settings UI
+                        const clickSoundSelect = document.getElementById('clickSound');
+                        const volumeControl = document.getElementById('volume');
+                        const muteBtn = document.getElementById('muteBtn');
+                        const latencyOffsetControl = document.getElementById('latencyOffset');
+                        const offsetValueDisplay = document.getElementById('offsetValue');
+                        
+                        if (clickSoundSelect && window.soundSettings.currentSound) {
+                            clickSoundSelect.value = window.soundSettings.currentSound;
+                        }
+                        
+                        if (volumeControl && window.soundSettings.volume !== undefined) {
+                            volumeControl.value = window.soundSettings.volume;
+                        }
+                        
+                        if (muteBtn && window.soundSettings.muted !== undefined) {
+                            muteBtn.textContent = window.soundSettings.muted ? '🔇 Off' : '🔊 On';
+                            muteBtn.classList.toggle('muted', window.soundSettings.muted);
+                        }
+                        
+                        if (latencyOffsetControl && offsetValueDisplay && window.soundSettings.latencyOffset !== undefined) {
+                            const offsetMs = Math.round(window.soundSettings.latencyOffset * 1000);
+                            latencyOffsetControl.value = offsetMs;
+                            offsetValueDisplay.textContent = `${offsetMs} ms`;
+                        }
+                        
+                        console.log('UI elements updated with saved settings');
+                    } catch (e) {
+                        console.error('Error updating UI elements with saved settings:', e);
+                    }
+                }, 0);
+                
+                // Set flag to indicate settings have been loaded
+                settingsAlreadyLoaded = true;
+                
+                console.log('Critical settings applied immediately');
+            } catch (error) {
+                console.error('Error loading settings immediately:', error);
+            }
+        }
+        
+        // Apply settings immediately
+        loadSettingsImmediately();
+        
+        // Force WebSocket connection immediately, even before DOM is fully loaded
+        // This ensures the connection is established as early as possible
+        console.log('Forcing immediate WebSocket connection attempt');
         connectWebSocket();
     </script>
 </body>

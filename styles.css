@@ -1,31 +1,121 @@
+:root {
+    /* Light theme (default) */
+    --bg-gradient-start: #f5f7fa;
+    --bg-gradient-end: #c3cfe2;
+    --text-color: #333;
+    --container-bg: #ffffff;
+    --container-shadow: rgba(0, 0, 0, 0.1);
+    --metronome-bg: #ecf0f1;
+    --position-color: #2c3e50;
+    --bpm-color: #7f8c8d;
+    --status-bg: #d4edda;
+    --status-color: #155724;
+    --status-border: #c3e6cb;
+    --status-error-bg: #f8d7da;
+    --status-error-color: #721c24;
+    --status-error-border: #f5c6cb;
+    --beat-indicator-bg: #ecf0f1;
+    --beat-indicator-border: #bdc3c7;
+    --beat-indicator-active-bg: #3498db;
+    --beat-indicator-active-border: #2980b9;
+    --beat-indicator-downbeat-bg: #e74c3c;
+    --beat-indicator-downbeat-border: #c0392b;
+    --button-primary-bg: #3498db;
+    --button-primary-color: #ffffff;
+    --button-primary-hover-bg: #2980b9;
+    --button-success-bg: #2ecc71;
+    --button-success-color: #ffffff;
+    --button-danger-bg: #e74c3c;
+    --button-danger-color: #ffffff;
+    --button-warning-bg: #e67e22;
+    --button-warning-color: #ffffff;
+    --settings-bg: #f8f9fa;
+    --settings-border: #e0e0e0;
+    --settings-section-bg: #ffffff;
+    --settings-section-border: #eee;
+    --settings-header-color: #333;
+    --settings-title-color: #555;
+    --settings-label-color: #555;
+    --input-bg: #ffffff;
+    --input-border: #ddd;
+    --input-focus-border: #3498db;
+    --input-value-bg: #f0f0f0;
+}
+
+/* Dark theme (OLED-friendly) */
+[data-theme="dark"] {
+    --bg-gradient-start: #000000;
+    --bg-gradient-end: #000000;
+    --text-color: #ffffff;
+    --container-bg: #000000;
+    --container-shadow: rgba(0, 0, 0, 0.5);
+    --metronome-bg: #000000;
+    --position-color: #ffffff;
+    --bpm-color: #cccccc;
+    --status-bg: #000000;
+    --status-color: #2ecc71;
+    --status-border: #27ae60;
+    --status-error-bg: #000000;
+    --status-error-color: #e74c3c;
+    --status-error-border: #c0392b;
+    --beat-indicator-bg: #121212;
+    --beat-indicator-border: #1a1a1a;
+    --beat-indicator-active-bg: #3498db;
+    --beat-indicator-active-border: #2980b9;
+    --beat-indicator-downbeat-bg: #e74c3c;
+    --beat-indicator-downbeat-border: #c0392b;
+    --button-primary-bg: #3498db;
+    --button-primary-color: #ffffff;
+    --button-primary-hover-bg: #2980b9;
+    --button-success-bg: #2ecc71;
+    --button-success-color: #ffffff;
+    --button-danger-bg: #e74c3c;
+    --button-danger-color: #ffffff;
+    --button-warning-bg: #e67e22;
+    --button-warning-color: #ffffff;
+    --settings-bg: #000000;
+    --settings-border: #1a1a1a;
+    --settings-section-bg: #121212;
+    --settings-section-border: #1a1a1a;
+    --settings-header-color: #ffffff;
+    --settings-title-color: #cccccc;
+    --settings-label-color: #cccccc;
+    --input-bg: #121212;
+    --input-border: #1a1a1a;
+    --input-focus-border: #3498db;
+    --input-value-bg: #121212;
+}
+
 body {
     font-family: 'Arial', sans-serif;
     margin: 0;
     padding: 20px;
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    color: #333;
+    background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+    color: var(--text-color);
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
     overflow-x: hidden;
+    transition: background 0.3s ease;
 }
 
 .container {
-    background: white;
+    background: var(--container-bg);
     border-radius: 20px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    box-shadow: 0 10px 30px var(--container-shadow);
     padding: 30px;
     width: 100%;
     max-width: 500px;
     text-align: center;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
 }
 
 #metronome {
     width: 250px;
     height: 250px;
     border-radius: 50%;
-    background: #ecf0f1;
+    background: var(--metronome-bg);
     margin: 0 auto 25px;
     display: flex;
     flex-direction: column;
@@ -34,6 +124,7 @@ body {
     position: relative;
     overflow: hidden;
     will-change: transform;
+    transition: background 0.3s ease;
 }
 
 .beat-pulse {
@@ -62,28 +153,31 @@ body {
     margin-bottom: 5px;
     position: relative;
     z-index: 1;
-    color: #2c3e50;
+    color: var(--position-color);
+    transition: color 0.3s ease;
 }
 #bpm {
     font-size: 1.8rem;
-    color: #7f8c8d;
+    color: var(--bpm-color);
     position: relative;
     z-index: 1;
+    transition: color 0.3s ease;
 }
 #status {
     padding: 12px;
     margin: 25px auto;
     width: 90%;
     border-radius: 10px;
-    background: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
+    background: var(--status-bg);
+    color: var(--status-color);
+    border: 1px solid var(--status-border);
     font-size: 1.1rem;
+    transition: background 0.3s ease, color 0.3s ease, border 0.3s ease;
 }
 .status-error {
-    background: #f8d7da !important;
-    color: #721c24 !important;
-    border: 1px solid #f5c6cb !important;
+    background: var(--status-error-bg) !important;
+    color: var(--status-error-color) !important;
+    border: 1px solid var(--status-error-border) !important;
 }
 .beat-indicators {
     display: flex;
@@ -95,16 +189,17 @@ body {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #ecf0f1;
-    border: 2px solid #bdc3c7;
+    background: var(--beat-indicator-bg);
+    border: 2px solid var(--beat-indicator-border);
+    transition: background 0.3s ease, border-color 0.3s ease;
 }
 .beat-indicator.active {
-    background: #3498db;
-    border-color: #2980b9;
+    background: var(--beat-indicator-active-bg);
+    border-color: var(--beat-indicator-active-border);
 }
 .beat-indicator.active.downbeat {
-    background: #e74c3c;
-    border-color: #c0392b;
+    background: var(--beat-indicator-downbeat-bg);
+    border-color: var(--beat-indicator-downbeat-border);
 }
 
 .controls {
@@ -127,13 +222,13 @@ body {
 }
 
 #startBtn {
-    background-color: #2ecc71;
-    color: white;
+    background-color: var(--button-success-bg);
+    color: var(--button-success-color);
 }
 
 #stopBtn {
-    background-color: #e74c3c;
-    color: white;
+    background-color: var(--button-danger-bg);
+    color: var(--button-danger-color);
 }
 
 .controls button:hover {
@@ -142,4 +237,458 @@ body {
 
 .controls button:active {
     transform: scale(0.98);
+}
+
+/* Settings Container Styles */
+.settings-container {
+    margin-top: 20px;
+    width: 100%;
+    position: relative;
+}
+
+.settings-toggle {
+    padding: 10px 20px;
+    font-size: 1rem;
+    background-color: var(--button-primary-bg);
+    color: var(--button-primary-color);
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 0 auto;
+}
+
+.settings-toggle:hover {
+    background-color: var(--button-primary-hover-bg);
+    transform: scale(1.05);
+}
+
+.settings-toggle:active {
+    transform: scale(0.98);
+}
+
+/* Sound Controls Styles */
+.sound-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-top: 15px;
+    padding: 20px;
+    background-color: var(--settings-bg);
+    border-radius: 15px;
+    box-shadow: 0 5px 15px var(--container-shadow);
+    position: relative;
+    max-width: 90%;
+    margin-left: auto;
+    margin-right: auto;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--settings-border);
+    transition: border-bottom 0.3s ease;
+}
+
+.settings-header h3 {
+    margin: 0;
+    color: var(--settings-header-color);
+    font-size: 1.2rem;
+    transition: color 0.3s ease;
+}
+
+.close-settings {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--settings-label-color);
+    cursor: pointer;
+    padding: 0 5px;
+    line-height: 1;
+    transition: color 0.3s ease;
+}
+
+.close-settings:hover {
+    color: var(--settings-header-color);
+}
+
+.settings-section {
+    padding: 10px;
+    border-radius: 8px;
+    background-color: var(--settings-section-bg);
+    box-shadow: 0 1px 3px var(--container-shadow);
+    margin-bottom: 15px;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.settings-section h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: var(--settings-title-color);
+    font-size: 1rem;
+    border-bottom: 1px solid var(--settings-section-border);
+    padding-bottom: 5px;
+    transition: color 0.3s ease, border-bottom 0.3s ease;
+}
+
+.sound-option, .volume-control, .mute-control, .timing-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+}
+
+.sound-controls label {
+    font-size: 0.9rem;
+    color: var(--settings-label-color);
+    min-width: 100px;
+    text-align: right;
+    transition: color 0.3s ease;
+}
+
+#clickSound {
+    padding: 8px 12px;
+    border-radius: 5px;
+    border: 1px solid var(--input-border);
+    background-color: var(--input-bg);
+    color: var(--text-color);
+    font-size: 0.9rem;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s, background-color 0.3s ease, color 0.3s ease;
+    flex: 1;
+}
+
+#clickSound:focus {
+    border-color: var(--input-focus-border);
+}
+
+#volume, #latencyOffset {
+    width: 150px;
+    cursor: pointer;
+    flex: 1;
+    accent-color: var(--button-primary-bg);
+}
+
+/* Timing offset value display */
+#offsetValue {
+    min-width: 45px;
+    font-size: 0.85rem;
+    color: var(--settings-label-color);
+    text-align: center;
+    background-color: var(--input-value-bg);
+    padding: 2px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--input-border);
+    transition: color 0.3s ease, background-color 0.3s ease, border 0.3s ease;
+}
+
+#muteBtn {
+    padding: 8px 15px;
+    font-size: 0.9rem;
+    border: none;
+    border-radius: 50px;
+    background-color: var(--button-primary-bg);
+    color: var(--button-primary-color);
+    cursor: pointer;
+    transition: all 0.2s, background-color 0.3s ease, color 0.3s ease;
+}
+
+#muteBtn:hover {
+    background-color: var(--button-primary-hover-bg);
+    transform: scale(1.05);
+}
+
+#muteBtn:active {
+    transform: scale(0.98);
+}
+
+#muteBtn.muted {
+    background-color: #95a5a6;
+}
+
+
+/* Theme toggle button */
+.theme-toggle, .fullscreen-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+}
+
+.theme-toggle label, .fullscreen-toggle label {
+    font-size: 0.9rem;
+    color: var(--settings-label-color);
+    min-width: 100px;
+    text-align: right;
+    transition: color 0.3s ease;
+}
+
+#fullscreenBtn {
+    padding: 8px 15px;
+    font-size: 0.9rem;
+    border: none;
+    border-radius: 5px;
+    background-color: var(--button-primary-bg);
+    color: var(--button-primary-color);
+    cursor: pointer;
+    transition: all 0.2s, background-color 0.3s ease, color 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+#fullscreenBtn:hover {
+    background-color: var(--button-primary-hover-bg);
+    transform: scale(1.05);
+}
+
+#fullscreenBtn:active {
+    transform: scale(0.98);
+}
+
+/* Fullscreen mode styles */
+.fullscreen-mode {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--container-bg);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.fullscreen-mode h1,
+.fullscreen-mode #status,
+.fullscreen-mode .controls {
+    display: none !important;
+}
+
+.fullscreen-mode #metronome {
+    width: 400px;
+    height: 400px;
+}
+
+.fullscreen-mode #position {
+    font-size: 7rem;
+}
+
+.fullscreen-mode #bpm {
+    font-size: 3.5rem;
+}
+
+.fullscreen-mode .beat-indicators {
+    margin-top: 40px;
+}
+
+.fullscreen-mode .beat-indicator {
+    width: 50px;
+    height: 50px;
+}
+
+.fullscreen-mode .settings-toggle {
+    display: none !important;
+}
+
+.fullscreen-exit {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    padding: 10px 15px;
+    background-color: var(--button-danger-bg);
+    color: var(--button-danger-color);
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* Mobile fullscreen optimizations */
+@media (max-width: 768px) {
+    .fullscreen-mode #metronome {
+        width: 90vw;
+        height: 90vw;
+        max-width: 500px;
+        max-height: 500px;
+    }
+    
+    .fullscreen-mode #position {
+        font-size: 20vw;
+    }
+    
+    .fullscreen-mode #bpm {
+        font-size: 8vw;
+    }
+    
+    .fullscreen-mode .beat-indicators {
+        margin-top: 8vh;
+    }
+    
+    .fullscreen-mode .beat-indicator {
+        width: 15vw;
+        height: 15vw;
+        max-width: 70px;
+        max-height: 70px;
+    }
+}
+
+.theme-switch {
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 30px;
+    vertical-align: middle;
+}
+
+.theme-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 30px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 22px;
+    width: 22px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+input:checked + .slider {
+    background-color: var(--button-primary-bg);
+}
+
+input:focus + .slider {
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 2px var(--button-primary-bg);
+}
+
+input:checked + .slider:before {
+    transform: translateX(30px);
+}
+
+.slider .icon {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+    transition: .4s;
+    line-height: 1;
+    text-align: center;
+}
+
+.slider .sun {
+    left: 7px;
+    color: #f1c40f;
+    opacity: 1;
+}
+
+.slider .moon {
+    right: 7px;
+    color: #f1c40f;
+    opacity: 0;
+}
+
+input:checked + .slider .sun {
+    opacity: 0;
+}
+
+input:checked + .slider .moon {
+    opacity: 1;
+}
+
+/* Responsive adjustments for sound controls */
+@media (max-width: 600px) {
+    .sound-controls {
+        flex-direction: column;
+        align-items: stretch;
+        max-width: 95%; /* Wider settings panel on mobile */
+        width: 95%;
+        padding: 15px 10px;
+    }
+    
+    .settings-section {
+        padding: 15px;
+        width: 100%;
+        box-sizing: border-box;
+    }
+    
+    .sound-option, .volume-control, .mute-control, .timing-control {
+        justify-content: space-between;
+        flex-wrap: wrap;
+        width: 100%;
+        margin-bottom: 10px;
+    }
+    
+    .sound-controls label {
+        text-align: left;
+        min-width: 80px; /* Smaller label width on mobile */
+    }
+    
+    /* Fix for timing offset slider value */
+    #offsetValue {
+        min-width: 40px;
+        font-size: 0.8rem;
+        margin-left: auto;
+    }
+    
+    .timing-control {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .timing-control label {
+        grid-column: 1;
+    }
+    
+    #latencyOffset {
+        grid-column: 2;
+        width: 100%;
+    }
+    
+    #offsetValue {
+        grid-column: 3;
+    }
+    
+    /* Ensure inputs take full width */
+    #clickSound, #volume, #latencyOffset {
+        flex: 1;
+        width: 100%;
+    }
 }
