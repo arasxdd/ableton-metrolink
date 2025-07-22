@@ -631,6 +631,106 @@ input:checked + .slider .moon {
     opacity: 1;
 }
 
+/* Debug panel styles */
+.debug-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+    vertical-align: middle;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 24px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+input:checked + .toggle-slider {
+    background-color: var(--button-primary-bg);
+}
+
+input:focus + .toggle-slider {
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 2px var(--button-primary-bg);
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(26px);
+}
+
+.debug-metrics {
+    margin-top: 10px;
+    padding: 10px;
+    background-color: var(--input-bg);
+    border-radius: 5px;
+    border: 1px solid var(--input-border);
+}
+
+.metric {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+    font-size: 0.85rem;
+}
+
+.metric-label {
+    color: var(--settings-label-color);
+}
+
+.metric-value {
+    font-weight: bold;
+    color: var(--settings-header-color);
+}
+
+.debug-button {
+    margin-top: 10px;
+    padding: 5px 10px;
+    background-color: var(--button-primary-bg);
+    color: var(--button-primary-color);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    width: 100%;
+}
+
+.debug-button:hover {
+    background-color: var(--button-primary-hover-bg);
+}
+
 /* Responsive adjustments for sound controls */
 @media (max-width: 600px) {
     .sound-controls {
@@ -647,7 +747,7 @@ input:checked + .slider .moon {
         box-sizing: border-box;
     }
     
-    .sound-option, .volume-control, .mute-control, .timing-control {
+    .sound-option, .volume-control, .mute-control, .timing-control, .debug-toggle {
         justify-content: space-between;
         flex-wrap: wrap;
         width: 100%;
@@ -690,5 +790,10 @@ input:checked + .slider .moon {
     #clickSound, #volume, #latencyOffset {
         flex: 1;
         width: 100%;
+    }
+    
+    /* Smaller metrics on mobile */
+    .metric {
+        font-size: 0.8rem;
     }
 }

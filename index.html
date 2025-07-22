@@ -12,6 +12,8 @@
     - Calculates server-client time offset for synchronization
     - Provides user-adjustable timing offset for fine-tuning
     -->
+    <!-- Audio cache disabled to reduce memory usage -->
+    <!-- <script src="audio-cache.js"></script> -->
 </head>
 <body>
     <div class="container">
@@ -97,11 +99,61 @@
                     </div>
                 </div>
                 
+                <div class="settings-section">
+                    <h4>Performance Monitoring</h4>
+                    <div class="debug-toggle">
+                        <label for="debugSwitch">Show Debug Info:</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="debugSwitch">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    
+                    <div id="debugPanel" style="display: none;">
+                        <div class="debug-metrics">
+                            <div class="metric">
+                                <span class="metric-label">Scheduled Beats:</span>
+                                <span class="metric-value" id="scheduledBeats">0</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Played Beats:</span>
+                                <span class="metric-value" id="playedBeats">0</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Missed Beats:</span>
+                                <span class="metric-value" id="missedBeats">0</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Avg. Latency:</span>
+                                <span class="metric-value" id="avgLatency">0 ms</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Server Offset:</span>
+                                <span class="metric-value" id="serverOffset">0 ms</span>
+                            </div>
+                        </div>
+                        <button id="resetMetricsBtn" class="debug-button">Reset Metrics</button>
+                    </div>
+                </div>
+                
             </div>
         </div>
     </div>
 
     <script>
+        // Service worker disabled to reduce memory usage
+        // if ('serviceWorker' in navigator) {
+        //     window.addEventListener('load', () => {
+        //         navigator.serviceWorker.register('/service-worker.js')
+        //             .then(registration => {
+        //                 console.log('Service Worker registered with scope:', registration.scope);
+        //             })
+        //             .catch(error => {
+        //                 console.error('Service Worker registration failed:', error);
+        //             });
+        //     });
+        // }
+        
         // Optimized mobile version and iOS detection
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent);
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -128,97 +180,8 @@
         // Web Audio API context
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         
-        // Sound buffers for the different click sounds (Web Audio API)
-        const clickSounds = {
-            click1: { high: null, low: null },
-            click2: { high: null, low: null },
-            click3: { high: null, low: null }
-        };
-        
-        // HTML5 Audio elements as fallback
-        const audioElements = {
-            click1: { 
-                high: new Audio('sounds/click1_high.wav'),
-                low: new Audio('sounds/click1_low.wav')
-            },
-            click2: { 
-                high: new Audio('sounds/click2_high.wav'),
-                low: new Audio('sounds/click2_low.wav')
-            },
-            click3: { 
-                high: new Audio('sounds/click3_high.wav'),
-                low: new Audio('sounds/click3_low.wav')
-            }
-        };
-        
-        // Function to load audio file and decode it
-        async function loadSound(url) {
-            try {
-                const response = await fetch(url);
-                const arrayBuffer = await response.arrayBuffer();
-                return await audioContext.decodeAudioData(arrayBuffer);
-            } catch (error) {
-                console.error(`Error loading sound ${url}:`, error);
-                return null;
-            }
-        }
-        
-        // Preload all sounds
-        async function preloadSounds() {
-            try {
-                console.log('Starting to preload sounds...');
-                
-                const soundFiles = [
-                    { type: 'click1', variant: 'high', url: 'sounds/click1_high.wav' },
-                    { type: 'click1', variant: 'low', url: 'sounds/click1_low.wav' },
-                    { type: 'click2', variant: 'high', url: 'sounds/click2_high.wav' },
-                    { type: 'click2', variant: 'low', url: 'sounds/click2_low.wav' },
-                    { type: 'click3', variant: 'high', url: 'sounds/click3_high.wav' },
-                    { type: 'click3', variant: 'low', url: 'sounds/click3_low.wav' }
-                ];
-                
-                // Load each sound individually to better track failures
-                let loadedCount = 0;
-                let failedCount = 0;
-                
-                for (const sound of soundFiles) {
-                    try {
-                        console.log(`Loading sound: ${sound.url}`);
-                        const buffer = await loadSound(sound.url);
-                        
-                        if (buffer) {
-                            clickSounds[sound.type][sound.variant] = buffer;
-                            loadedCount++;
-                            console.log(`Successfully loaded: ${sound.url}`);
-                        } else {
-                            failedCount++;
-                            console.error(`Failed to load sound: ${sound.url}`);
-                        }
-                    } catch (soundError) {
-                        failedCount++;
-                        console.error(`Error loading sound ${sound.url}:`, soundError);
-                    }
-                }
-                
-                console.log(`Sound loading complete. Loaded: ${loadedCount}, Failed: ${failedCount}`);
-                
-                if (loadedCount === 0) {
-                    throw new Error('No sounds were loaded successfully');
-                }
-                
-                // Check if each sound type has at least one variant loaded
-                for (const type in clickSounds) {
-                    if (!clickSounds[type].high && !clickSounds[type].low) {
-                        console.warn(`Sound type ${type} has no loaded variants`);
-                    }
-                }
-                
-                return loadedCount > 0;
-            } catch (error) {
-                console.error('Error preloading sounds:', error);
-                return false;
-            }
-        }
+        // Sound types for oscillator-based click sounds
+        // No need to load audio files, we generate sounds programmatically
         
         // Sound settings
         let soundSettings = {
@@ -239,10 +202,42 @@
         
         // Scheduling variables
         let scheduledBeats = [];
-        let lookAheadTime = 0.2;  // Schedule 200ms ahead
-        let scheduleInterval = 50;  // Check schedule every 50ms
+        // Adaptive look-ahead time based on device capabilities
+        let lookAheadTime = isMobile ? 0.3 : 0.2;  // Longer look-ahead for mobile (300ms vs 200ms)
+        let scheduleInterval = isMobile ? 40 : 50;  // More frequent checks on mobile (40ms vs 50ms)
         let lastScheduleTime = 0;
         let serverTimeOffset = 0;  // Difference between server and client time
+        
+        // Audio source pool removed - using simpler oscillator-based sound generation
+        
+        // Performance metrics for timing accuracy
+        const timingMetrics = {
+            scheduledBeats: 0,
+            playedBeats: 0,
+            missedBeats: 0,
+            totalLatency: 0,
+            measurements: 0,
+            
+            // Add a latency measurement
+            addLatencyMeasurement(latency) {
+                this.totalLatency += latency;
+                this.measurements++;
+            },
+            
+            // Get average latency
+            getAverageLatency() {
+                return this.measurements > 0 ? this.totalLatency / this.measurements : 0;
+            },
+            
+            // Reset metrics
+            reset() {
+                this.scheduledBeats = 0;
+                this.playedBeats = 0;
+                this.missedBeats = 0;
+                this.totalLatency = 0;
+                this.measurements = 0;
+            }
+        };
         
         let lastUpdate = 0;
         let socket;
@@ -551,48 +546,10 @@
                 // Update the last beat and play sound as a final fallback
                 const currentBeat = `${bar}.${beat}`;
                 if (currentData.transport_running && currentBeat !== soundSettings.lastBeat) {
-                    // Play sound directly as a final fallback
-                    console.log(`UI update detected new beat ${currentBeat}, playing sound as final fallback`);
-                    
-                    // Try to play the sound directly (without scheduling)
-                    try {
-                        // This is a final fallback, so we'll use both methods to maximize chances of sound playing
-                        
-                        // 1. Try Web Audio API first
-                        playClickSound(currentData.is_downbeat, 0).then(success => {
-                            console.log(`UI fallback: Web Audio API sound ${success ? 'played' : 'failed'} for beat ${currentBeat}`);
-                            
-                            // 2. If Web Audio API failed or as an additional measure, try HTML5 Audio directly
-                            if (!success) {
-                                try {
-                                    // Check if sound is muted
-                                    if (soundSettings.muted) {
-                                        console.log('UI fallback: Sound is muted, not playing HTML5 Audio');
-                                        return;
-                                    }
-                                    
-                                    const audioElement = audioElements[soundSettings.currentSound];
-                                    if (audioElement) {
-                                        const sound = currentData.is_downbeat ? audioElement.high : audioElement.low;
-                                        const soundClone = sound.cloneNode();
-                                        soundClone.volume = soundSettings.volume;
-                                        
-                                        soundClone.play().then(() => {
-                                            console.log(`UI fallback: HTML5 Audio played for beat ${currentBeat}`);
-                                        }).catch(e => {
-                                            console.error(`UI fallback: HTML5 Audio failed for beat ${currentBeat}:`, e);
-                                        });
-                                    }
-                                } catch (htmlError) {
-                                    console.error(`UI fallback: HTML5 Audio error for beat ${currentBeat}:`, htmlError);
-                                }
-                            }
-                        }).catch(error => {
-                            console.error(`UI fallback: Error playing sound for beat ${currentBeat}:`, error);
-                        });
-                    } catch (error) {
-                        console.error(`UI fallback: Critical error playing sound for beat ${currentBeat}:`, error);
-                    }
+                    // Play sound directly as a fallback
+                    playClickSound(currentData.is_downbeat, 0).catch(error => {
+                        console.error(`Error playing sound for beat ${currentBeat}:`, error);
+                    });
                     
                     soundSettings.lastBeat = currentBeat;
                 }
@@ -642,10 +599,9 @@
             }
         }
         
-        // Schedule the next beat
+        // Schedule the next beat - simplified for better performance
         async function scheduleNextBeat() {
             if (!currentData.transport_running) {
-                console.log('Transport not running, skipping beat scheduling');
                 return;
             }
             
@@ -653,248 +609,165 @@
                 // Get current time in the audio context
                 const currentTime = audioContext.currentTime;
                 
-                // Calculate when the next beat should occur
-                const secondsPerBeat = 60.0 / currentData.bpm;
-                
                 // Get the current beat position
                 const [bar, beat] = currentData.position.split('.').map(Number);
                 const currentBeatId = `${bar}.${beat}`;
                 
-                console.log(`Checking beat ${currentBeatId}, BPM: ${currentData.bpm}, is_downbeat: ${currentData.is_downbeat}`);
-                
                 // Check if this beat is already scheduled
                 if (scheduledBeats.some(b => b.id === currentBeatId)) {
-                    console.log(`Beat ${currentBeatId} already scheduled, skipping`);
                     return;
                 }
                 
-                // Calculate the exact time when this beat should play
-                // Original calculation: Convert server timestamp to client time and add latency offset
+                // Track this beat in metrics
+                timingMetrics.scheduledBeats++;
+                
+                // Simplified beat time calculation
+                // Start with server timestamp and apply latency offset
                 let beatTime = (currentData.timestamp - serverTimeOffset) + soundSettings.latencyOffset;
                 
-                console.log(`Original beat time calculation: server timestamp ${currentData.timestamp.toFixed(3)}, offset ${serverTimeOffset.toFixed(3)}, latency ${soundSettings.latencyOffset}, result: ${beatTime.toFixed(3)}`);
+                // Ensure the beat time is in the future with enough lead time
+                const minimumLeadTime = isMobile ? 0.15 : 0.1; // 150ms for mobile, 100ms for desktop
                 
-                // Ensure the beat time is in the future
-                if (beatTime <= currentTime) {
-                    // If the calculated time is in the past, schedule it a small amount of time in the future
-                    const adjustedTime = currentTime + 0.1; // 100ms in the future
-                    console.log(`Beat time was in the past, adjusting from ${beatTime.toFixed(3)} to ${adjustedTime.toFixed(3)}`);
-                    beatTime = adjustedTime;
+                if (beatTime <= currentTime + minimumLeadTime) {
+                    // If the calculated time doesn't have enough lead time, adjust it
+                    beatTime = currentTime + minimumLeadTime;
+                    timingMetrics.missedBeats++;
                 }
                 
-                console.log(`Final beat time: ${beatTime.toFixed(3)}`);
-                console.log(`Current audio time: ${currentTime.toFixed(3)}, look-ahead window: ${(currentTime + lookAheadTime).toFixed(3)}`);
-                
-                // Always schedule if the beat is in the future and within our look-ahead window
+                // Schedule if the beat is in the future and within our look-ahead window
                 if (beatTime > currentTime && beatTime < currentTime + lookAheadTime) {
-                    console.log(`✅ Scheduling beat ${currentBeatId} for time ${beatTime.toFixed(3)}, current time: ${currentTime.toFixed(3)}`);
-                    
                     // Try to ensure audio context is running
                     if (audioContext.state === 'suspended') {
                         try {
-                            console.log('Audio context suspended before scheduling, attempting to resume...');
                             await audioContext.resume();
-                            console.log('Audio context resumed before scheduling');
                         } catch (resumeError) {
-                            console.error('Failed to resume audio context before scheduling:', resumeError);
+                            console.error('Failed to resume audio context:', resumeError);
                         }
                     }
                     
-                    // Schedule the sound (now async)
-                    console.log(`Calling playClickSound for beat ${currentBeatId}, is_downbeat: ${currentData.is_downbeat}, time: ${beatTime.toFixed(3)}`);
+                    // Schedule the sound
                     const soundPlayed = await playClickSound(currentData.is_downbeat, beatTime);
                     
-                    // Add to scheduled beats
+                    // Add to scheduled beats with minimal metadata
                     scheduledBeats.push({
                         id: currentBeatId,
                         time: beatTime,
-                        scheduled: true,
-                        soundPlayed: soundPlayed
+                        isDownbeat: currentData.is_downbeat
                     });
                     
-                    console.log(`Beat ${currentBeatId} scheduled${soundPlayed ? ' and sound queued' : ' but sound failed'}`);
-                    
-                    // If Web Audio API scheduling failed, try immediate HTML5 Audio fallback
-                    if (!soundPlayed) {
-                        console.log(`Web Audio API scheduling failed for beat ${currentBeatId}, trying immediate HTML5 Audio fallback`);
-                        try {
-                            // Check if sound is muted
-                            if (soundSettings.muted) {
-                                console.log(`Scheduler fallback: Sound is muted, not playing HTML5 Audio for beat ${currentBeatId}`);
-                                return;
-                            }
-                            
-                            // Get the HTML5 Audio element
-                            const audioElement = audioElements[soundSettings.currentSound];
-                            if (audioElement) {
-                                // Choose high or low sound
-                                const sound = currentData.is_downbeat ? audioElement.high : audioElement.low;
-                                
-                                // Clone the audio to allow overlapping sounds
-                                const soundClone = sound.cloneNode();
-                                soundClone.volume = soundSettings.volume;
-                                
-                                // Play immediately
-                                soundClone.play().then(() => {
-                                    console.log(`Immediate HTML5 Audio fallback played for beat ${currentBeatId}`);
-                                }).catch(error => {
-                                    console.error(`Immediate HTML5 Audio fallback failed for beat ${currentBeatId}:`, error);
-                                });
-                            }
-                        } catch (fallbackError) {
-                            console.error(`Error in immediate HTML5 Audio fallback for beat ${currentBeatId}:`, fallbackError);
-                        }
+                    if (soundPlayed) {
+                        timingMetrics.playedBeats++;
                     }
                     
                     // Clean up old scheduled beats
-                    const now = audioContext.currentTime;
-                    scheduledBeats = scheduledBeats.filter(beat => beat.time > now - 1);
+                    scheduledBeats = scheduledBeats.filter(beat => beat.time > currentTime - 1);
                 } else {
-                    console.log(`❌ Beat ${currentBeatId} not scheduled: time ${beatTime.toFixed(3)} is ${beatTime <= currentTime ? 'in the past' : 'beyond look-ahead window'}`);
+                    timingMetrics.missedBeats++;
                 }
             } catch (error) {
                 console.error('Error in scheduleNextBeat:', error);
             }
         }
         
-        // Function to play the selected click sound with Web Audio API
+        // Function to play click sound using oscillators (more efficient than sample-based audio)
         async function playClickSound(isDownbeat, scheduleTime = 0) {
-            console.log(`playClickSound called with muted=${soundSettings.muted}`);
             if (soundSettings.muted) {
-                console.log('Sound is muted, not playing sound');
                 return false;
             }
             
             try {
                 // Check audio context state and try to resume if suspended
                 if (audioContext.state === 'suspended') {
-                    console.log('Audio context is suspended, attempting to resume...');
                     try {
                         await audioContext.resume();
-                        console.log('Audio context resumed successfully');
-                        
-                        // For iOS, unlock audio elements as well
-                        if (isIOS) {
-                            unlockIOSAudio();
-                        }
                     } catch (resumeError) {
                         console.error('Failed to resume audio context:', resumeError);
-                        // Continue to fallback method
+                        return false;
                     }
                 }
                 
-                // Get the selected sound pair
-                const soundPair = clickSounds[soundSettings.currentSound];
-                
-                if (!soundPair) {
-                    console.error('Selected sound not found:', soundSettings.currentSound);
+                if (audioContext.state !== 'running') {
                     return false;
                 }
                 
-                // Choose high sound for downbeat, low sound for other beats
-                const buffer = isDownbeat ? soundPair.high : soundPair.low;
+                // Get the actual time to play the sound
+                const playTime = scheduleTime > 0 ? scheduleTime : audioContext.currentTime;
                 
-                // If the preferred buffer is not available, try to use the other one
-                let finalBuffer = buffer;
-                if (!finalBuffer) {
-                    console.warn(`${isDownbeat ? 'High' : 'Low'} sound buffer not loaded for ${soundSettings.currentSound}, trying alternative...`);
-                    finalBuffer = isDownbeat ? soundPair.low : soundPair.high;
+                // Define sound parameters based on the selected click type
+                let frequency, duration, attackTime, releaseTime;
+                
+                switch (soundSettings.currentSound) {
+                    case 'click1': // Standard click
+                        frequency = isDownbeat ? 1800 : 1200;
+                        duration = 0.03;
+                        attackTime = 0.001;
+                        releaseTime = 0.01;
+                        break;
+                    case 'click2': // Wooden click
+                        frequency = isDownbeat ? 2200 : 1600;
+                        duration = 0.04;
+                        attackTime = 0.002;
+                        releaseTime = 0.02;
+                        break;
+                    case 'click3': // Digital click
+                        frequency = isDownbeat ? 1500 : 1000;
+                        duration = 0.02;
+                        attackTime = 0.001;
+                        releaseTime = 0.008;
+                        break;
+                    default:
+                        frequency = isDownbeat ? 1800 : 1200;
+                        duration = 0.03;
+                        attackTime = 0.001;
+                        releaseTime = 0.01;
                 }
                 
-                // iOS-specific handling - prioritize HTML5 Audio on iOS
-                if (isIOS) {
-                    try {
-                        // Get the HTML5 Audio element
-                        const audioElement = audioElements[soundSettings.currentSound];
-                        if (!audioElement) {
-                            console.error('HTML5 Audio element not found for:', soundSettings.currentSound);
-                            // Fall back to Web Audio API if HTML5 Audio is not available
-                        } else {
-                            // Choose high or low sound
-                            const sound = isDownbeat ? audioElement.high : audioElement.low;
-                            
-                            // Clone the audio to allow overlapping sounds
-                            const soundClone = sound.cloneNode();
-                            soundClone.volume = soundSettings.volume;
-                            
-                            console.log(`Using HTML5 Audio for iOS ${isDownbeat ? 'downbeat' : 'regular beat'} sound`);
-                            
-                            // Play immediately (HTML5 Audio doesn't support precise scheduling)
-                            try {
-                                await soundClone.play();
-                                return true;
-                            } catch (iosAudioError) {
-                                console.error('iOS HTML5 Audio playback failed:', iosAudioError);
-                                // Try Web Audio API as fallback
-                            }
-                        }
-                    } catch (iosError) {
-                        console.error('iOS audio handling error:', iosError);
-                        // Continue to Web Audio API
-                    }
-                }
+                // Create oscillator
+                const oscillator = audioContext.createOscillator();
+                oscillator.type = 'sine';
+                oscillator.frequency.value = frequency;
                 
-                // Try Web Audio API
-                if (finalBuffer && audioContext.state === 'running') {
-                    try {
-                        // Create audio source
-                        const source = audioContext.createBufferSource();
-                        source.buffer = finalBuffer;
-                        
-                        // Create gain node for volume control
-                        const gainNode = audioContext.createGain();
-                        gainNode.gain.value = soundSettings.volume;
-                        
-                        // Connect nodes
-                        source.connect(gainNode);
-                        gainNode.connect(audioContext.destination);
-                        
-                        // Calculate playback time
-                        const playTime = scheduleTime > 0 ? scheduleTime : audioContext.currentTime;
-                        
-                        // Log the playback attempt
-                        console.log(`Playing ${isDownbeat ? 'downbeat' : 'regular beat'} sound with Web Audio API at time ${playTime.toFixed(3)}`);
-                        
-                        // Start the source
-                        source.start(playTime);
-                        
-                        return true;
-                    } catch (webAudioError) {
-                        console.error('Web Audio API playback failed:', webAudioError);
-                        // Fall back to HTML5 Audio
-                    }
-                }
+                // Create gain node for envelope and volume control
+                const gainNode = audioContext.createGain();
+                gainNode.gain.value = 0;
                 
-                // Fallback to HTML5 Audio if Web Audio API failed or is not available
-                try {
-                    // Get the HTML5 Audio element
-                    const audioElement = audioElements[soundSettings.currentSound];
-                    if (!audioElement) {
-                        console.error('HTML5 Audio element not found for:', soundSettings.currentSound);
-                        return false;
-                    }
-                    
-                    // Choose high or low sound
-                    const sound = isDownbeat ? audioElement.high : audioElement.low;
-                    
-                    // Clone the audio to allow overlapping sounds
-                    const soundClone = sound.cloneNode();
-                    soundClone.volume = soundSettings.volume;
-                    
-                    console.log(`Falling back to HTML5 Audio for ${isDownbeat ? 'downbeat' : 'regular beat'} sound`);
-                    
-                    // Play immediately (HTML5 Audio doesn't support precise scheduling)
-                    try {
-                        await soundClone.play();
-                        return true;
-                    } catch (htmlAudioError) {
-                        console.error('HTML5 Audio playback failed:', htmlAudioError);
-                        return false;
-                    }
-                } catch (fallbackError) {
-                    console.error('All audio playback methods failed:', fallbackError);
-                    return false;
-                }
+                // Apply volume setting
+                const volumeNode = audioContext.createGain();
+                volumeNode.gain.value = soundSettings.volume;
+                
+                // Connect nodes
+                oscillator.connect(gainNode);
+                gainNode.connect(volumeNode);
+                volumeNode.connect(audioContext.destination);
+                
+                // Schedule envelope
+                const startTime = playTime;
+                const attackEndTime = startTime + attackTime;
+                const releaseStartTime = attackEndTime + duration;
+                const releaseEndTime = releaseStartTime + releaseTime;
+                
+                // Attack
+                gainNode.gain.setValueAtTime(0, startTime);
+                gainNode.gain.linearRampToValueAtTime(1, attackEndTime);
+                
+                // Sustain
+                gainNode.gain.setValueAtTime(1, releaseStartTime);
+                
+                // Release
+                gainNode.gain.linearRampToValueAtTime(0, releaseEndTime);
+                
+                // Start and stop the oscillator
+                oscillator.start(startTime);
+                oscillator.stop(releaseEndTime);
+                
+                // Clean up after playback
+                oscillator.onended = () => {
+                    oscillator.disconnect();
+                    gainNode.disconnect();
+                    volumeNode.disconnect();
+                };
+                
+                return true;
             } catch (error) {
                 console.error('Error in playClickSound:', error);
                 return false;
@@ -1034,52 +907,29 @@
             }
         }
         
-        // Unlock audio on iOS devices
+        // Unlock audio on iOS devices using oscillators
         function unlockIOSAudio() {
             console.log('Attempting to unlock iOS audio...');
             
-            // Create temporary audio elements for each sound and play them
-            for (const soundType in audioElements) {
-                try {
-                    // Play a short silent sound on each audio element
-                    const highSound = audioElements[soundType].high;
-                    const lowSound = audioElements[soundType].low;
-                    
-                    // Set volume to 0 to make it silent
-                    highSound.volume = 0;
-                    lowSound.volume = 0;
-                    
-                    // iOS requires playing inside a user gesture handler
-                    const playPromiseHigh = highSound.play();
-                    if (playPromiseHigh) {
-                        playPromiseHigh.catch(e => {
-                            console.log(`iOS unlock: Couldn't play high sound for ${soundType}:`, e);
-                        });
-                    }
-                    
-                    const playPromiseLow = lowSound.play();
-                    if (playPromiseLow) {
-                        playPromiseLow.catch(e => {
-                            console.log(`iOS unlock: Couldn't play low sound for ${soundType}:`, e);
-                        });
-                    }
-                    
-                    // Pause immediately
-                    setTimeout(() => {
-                        try {
-                            highSound.pause();
-                            highSound.currentTime = 0;
-                            lowSound.pause();
-                            lowSound.currentTime = 0;
-                        } catch (e) {
-                            console.error('Error pausing temporary sounds:', e);
-                        }
-                    }, 10);
-                    
-                    console.log(`Attempted to unlock audio for ${soundType}`);
-                } catch (e) {
-                    console.error(`Error unlocking iOS audio for ${soundType}:`, e);
-                }
+            try {
+                // Create a short silent oscillator
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                // Set the gain to 0 to make it silent
+                gainNode.gain.value = 0;
+                
+                // Connect the oscillator to the gain node and the gain node to the destination
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                // Start and stop the oscillator immediately
+                oscillator.start(0);
+                oscillator.stop(0.1);
+                
+                console.log('Attempted to unlock iOS audio with oscillator');
+            } catch (e) {
+                console.error('Error unlocking iOS audio:', e);
             }
         }
         
@@ -1400,6 +1250,79 @@
             }
         }
         
+        // Debug panel functionality
+        const debugSwitch = document.getElementById('debugSwitch');
+        const debugPanel = document.getElementById('debugPanel');
+        const resetMetricsBtn = document.getElementById('resetMetricsBtn');
+        
+        // Debug metrics elements
+        const scheduledBeatsEl = document.getElementById('scheduledBeats');
+        const playedBeatsEl = document.getElementById('playedBeats');
+        const missedBeatsEl = document.getElementById('missedBeats');
+        const avgLatencyEl = document.getElementById('avgLatency');
+        const serverOffsetEl = document.getElementById('serverOffset');
+        
+        // Toggle debug panel when debug switch is clicked
+        debugSwitch.addEventListener('change', () => {
+            debugPanel.style.display = debugSwitch.checked ? 'block' : 'none';
+            
+            // Start or stop metrics update interval
+            if (debugSwitch.checked) {
+                startMetricsUpdate();
+            } else {
+                stopMetricsUpdate();
+            }
+            
+            // Save debug state to settings
+            saveSettings();
+        });
+        
+        // Reset metrics when reset button is clicked
+        resetMetricsBtn.addEventListener('click', () => {
+            timingMetrics.reset();
+            updateMetricsDisplay();
+            console.log('Timing metrics reset');
+        });
+        
+        // Metrics update interval
+        let metricsUpdateInterval = null;
+        
+        // Start periodic metrics update
+        function startMetricsUpdate() {
+            if (metricsUpdateInterval) return;
+            
+            // Update immediately
+            updateMetricsDisplay();
+            
+            // Then update every 500ms
+            metricsUpdateInterval = setInterval(updateMetricsDisplay, 500);
+            console.log('Metrics update started');
+        }
+        
+        // Stop periodic metrics update
+        function stopMetricsUpdate() {
+            if (metricsUpdateInterval) {
+                clearInterval(metricsUpdateInterval);
+                metricsUpdateInterval = null;
+                console.log('Metrics update stopped');
+            }
+        }
+        
+        // Update metrics display
+        function updateMetricsDisplay() {
+            scheduledBeatsEl.textContent = timingMetrics.scheduledBeats;
+            playedBeatsEl.textContent = timingMetrics.playedBeats;
+            missedBeatsEl.textContent = timingMetrics.missedBeats;
+            
+            // Format average latency to 2 decimal places
+            const avgLatency = timingMetrics.getAverageLatency();
+            avgLatencyEl.textContent = `${avgLatency.toFixed(2)} ms`;
+            
+            // Format server offset to 2 decimal places
+            const offsetMs = serverTimeOffset * 1000;
+            serverOffsetEl.textContent = `${offsetMs.toFixed(2)} ms`;
+        }
+        
         // Save settings to localStorage
         function saveSettings() {
             const settings = {
@@ -1407,7 +1330,8 @@
                 volume: soundSettings.volume,
                 muted: soundSettings.muted,
                 latencyOffset: soundSettings.latencyOffset,
-                darkTheme: themeSwitch.checked
+                darkTheme: themeSwitch.checked,
+                debugEnabled: debugSwitch.checked
             };
             localStorage.setItem('metronomeSettings', JSON.stringify(settings));
             console.log('Settings saved to localStorage:', settings);
@@ -1477,6 +1401,18 @@
                     if (settings.darkTheme !== undefined) {
                         console.log('Applying theme from saved settings');
                         setTheme(settings.darkTheme);
+                    }
+                    
+                    // Apply debug panel state from saved settings
+                    if (settings.debugEnabled !== undefined && debugSwitch && debugPanel) {
+                        console.log('Applying debug panel state from saved settings:', settings.debugEnabled);
+                        debugSwitch.checked = settings.debugEnabled;
+                        debugPanel.style.display = settings.debugEnabled ? 'block' : 'none';
+                        
+                        // Start metrics update if debug panel is enabled
+                        if (settings.debugEnabled) {
+                            startMetricsUpdate();
+                        }
                     }
                 } catch (error) {
                     console.error('Error loading settings from localStorage:', error);
