@@ -296,7 +296,13 @@
                 socket.onmessage = async (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        console.log("Received MIDI update:", data);
+                        
+                        // Bardziej szczegółowe logowanie, ale tylko dla istotnych zmian
+                        if (data.position !== currentData.position || 
+                            data.bpm !== currentData.bpm || 
+                            data.transport_running !== currentData.transport_running) {
+                            console.log("Received significant update:", data);
+                        }
 
                         // Filtruj nierealne wartości
                         if (data.bpm < 20 || data.bpm > 300) {
@@ -318,12 +324,14 @@
 
                         // Aktualizuj tylko jeśli dane się zmieniły lub minął określony czas
                         if (data.position !== currentData.position ||
+                            data.bpm !== currentData.bpm ||
+                            data.transport_running !== currentData.transport_running ||
+                            data.is_downbeat !== currentData.is_downbeat ||
                             performance.now() - lastUpdate >= updateInterval) {
 
                             lastUpdate = performance.now();
 
                             // Update BPM immediately for better responsiveness
-                            // Removed excessive smoothing that was causing delays
                             currentData.bpm = data.bpm;
 
                             // Aktualizacja pozostałych danych
@@ -331,9 +339,43 @@
                             currentData.is_downbeat = data.is_downbeat;
                             currentData.transport_running = data.transport_running;
                             currentData.timestamp = data.timestamp;
+                            
+                            // Dodajemy obsługę nowych pól z serwera
+                            if (data.phase !== undefined) {
+                                currentData.phase = data.phase;
+                            }
+                            
+                            if (data.quantum !== undefined) {
+                                currentData.quantum = data.quantum;
+                            }
 
                             // Wymuś natychmiastową aktualizację UI
                             updateUI();
+                            
+                            // Aktualizuj debug panel jeśli jest włączony
+                            if (document.getElementById('debugSwitch').checked) {
+                                document.getElementById('serverOffset').textContent = `${Math.round(serverTimeOffset * 1000)} ms`;
+                                
+                                // Dodaj więcej informacji do panelu debug jeśli są dostępne
+                                if (data.debug) {
+                                    const debugInfo = document.createElement('div');
+                                    debugInfo.className = 'debug-info';
+                                    debugInfo.innerHTML = `
+                                        <div>Raw Beat: ${data.debug.rawBeat.toFixed(3)}</div>
+                                        <div>Phase: ${data.debug.phase.toFixed(3)}</div>
+                                        <div>Quantum: ${data.debug.quantum}</div>
+                                        <div>Peers: ${data.debug.numPeers}</div>
+                                    `;
+                                    
+                                    // Zastąp poprzednie informacje debugowe
+                                    const existingDebugInfo = document.querySelector('.debug-info');
+                                    if (existingDebugInfo) {
+                                        existingDebugInfo.remove();
+                                    }
+                                    
+                                    document.getElementById('debugPanel').appendChild(debugInfo);
+                                }
+                            }
                             
                             // Start or stop the scheduler based on transport state
                             if (currentData.transport_running && !scheduleTimer) {
@@ -531,23 +573,55 @@
             // Aktualizacja wskaźników beatów
             const [bar, beat] = currentData.position.split('.').map(Number);
             const beatIndex = beat - 1;
-
+            
+            // Określ quantum (liczbę beatów w takcie) - domyślnie 4 jeśli nie zostało przesłane
+            const quantum = currentData.quantum || 4;
+            
+            // Upewnij się, że mamy odpowiednią liczbę wskaźników beatów
+            // Jeśli quantum się zmieniło, może być potrzebne dodanie lub usunięcie wskaźników
+            while (beatIndicators.length < quantum) {
+                // Dodaj nowy wskaźnik beatu
+                const newIndicator = document.createElement('div');
+                newIndicator.className = 'beat-indicator';
+                newIndicator.id = `beat${beatIndicators.length + 1}`;
+                document.querySelector('.beat-indicators').appendChild(newIndicator);
+                beatIndicators.push(newIndicator);
+            }
+            
+            // Ukryj nadmiarowe wskaźniki jeśli quantum jest mniejsze niż liczba wskaźników
             beatIndicators.forEach((indicator, index) => {
-                const isActive = index === beatIndex;
-                indicator.classList.toggle('active', isActive);
-                indicator.classList.toggle('downbeat', isActive && currentData.is_downbeat);
+                if (index < quantum) {
+                    indicator.style.display = 'block';
+                    // Pierwszy beat to zawsze downbeat
+                    const isDownbeat = index === 0;
+                    indicator.classList.toggle('downbeat', isDownbeat);
+                    indicator.classList.toggle('active', index === beatIndex);
+                } else {
+                    indicator.style.display = 'none';
+                }
             });
 
-            // Aktualizacja pulsu metronomu
+            // Aktualizacja pulsu metronomu z uwzględnieniem fazy
             metronome.classList.remove('downbeat', 'beat');
+            
             if (beatIndex >= 0) {
-                metronome.classList.add(currentData.is_downbeat ? 'downbeat' : 'beat');
+                // Dodaj klasę w zależności od tego czy to downbeat (pierwszy beat w takcie)
+                metronome.classList.add(beat === 1 ? 'downbeat' : 'beat');
+                
+                // Dodaj animację fazy jeśli mamy informację o fazie
+                if (currentData.phase !== undefined) {
+                    // Ustaw zmienną CSS dla animacji fazy (0-1)
+                    metronome.style.setProperty('--beat-phase', currentData.phase);
+                    
+                    // Dodaj klasę animacji tylko gdy transport działa
+                    metronome.classList.toggle('with-phase', currentData.transport_running);
+                }
                 
                 // Update the last beat and play sound as a final fallback
                 const currentBeat = `${bar}.${beat}`;
                 if (currentData.transport_running && currentBeat !== soundSettings.lastBeat) {
                     // Play sound directly as a fallback
-                    playClickSound(currentData.is_downbeat, 0).catch(error => {
+                    playClickSound(beat === 1, 0).catch(error => {
                         console.error(`Error playing sound for beat ${currentBeat}:`, error);
                     });
                     
@@ -558,6 +632,9 @@
             // Aktualizacja stanu przycisków
             startBtn.disabled = currentData.transport_running;
             stopBtn.disabled = !currentData.transport_running;
+            
+            // Dodaj klasę do body wskazującą na stan transportu
+            document.body.classList.toggle('transport-running', currentData.transport_running);
         }
         
         // Start the scheduler

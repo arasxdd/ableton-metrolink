@@ -100,6 +100,39 @@ body {
     transition: background 0.3s ease;
 }
 
+/* Dodatkowe style dla stanu transportu */
+body.transport-running {
+    /* Subtelna animacja tła gdy transport działa */
+    animation: transport-running-bg 10s infinite alternate;
+}
+
+@keyframes transport-running-bg {
+    0% {
+        background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+    }
+    100% {
+        background: linear-gradient(135deg, 
+            color-mix(in srgb, var(--bg-gradient-start) 90%, var(--button-success-bg)) 0%, 
+            color-mix(in srgb, var(--bg-gradient-end) 90%, var(--button-success-bg)) 100%);
+    }
+}
+
+/* Dodatkowe style dla trybu ciemnego */
+[data-theme="dark"].transport-running {
+    animation: transport-running-dark-bg 10s infinite alternate;
+}
+
+@keyframes transport-running-dark-bg {
+    0% {
+        background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+    }
+    100% {
+        background: linear-gradient(135deg, 
+            color-mix(in srgb, var(--bg-gradient-start) 90%, var(--button-success-bg)) 0%, 
+            color-mix(in srgb, var(--bg-gradient-end) 95%, var(--button-success-bg)) 100%);
+    }
+}
+
 .container {
     background: var(--container-bg);
     border-radius: 20px;
@@ -125,6 +158,12 @@ body {
     overflow: hidden;
     will-change: transform;
     transition: background 0.3s ease;
+    
+    /* Dodajemy zmienną CSS dla fazy beatu (0-1) */
+    --beat-phase: 0;
+    
+    /* Dodajemy obramowanie, które będzie animowane */
+    border: 5px solid transparent;
 }
 
 .beat-pulse {
@@ -147,6 +186,57 @@ body {
 @keyframes pulse {
     0% { transform: scale(0.8); opacity: 1; }
     100% { transform: scale(2); opacity: 0; }
+}
+
+/* Animacja fazy dla metronomu */
+#metronome.with-phase {
+    animation: none; /* Wyłączamy standardową animację */
+    position: relative;
+}
+
+/* Animacja fazy dla downbeatu (pierwszy beat w takcie) */
+#metronome.with-phase.downbeat {
+    border-color: rgba(255,107,107,0.8);
+    background: linear-gradient(
+        to right,
+        var(--metronome-bg) calc(var(--beat-phase) * 100%),
+        rgba(255,107,107,0.1) calc(var(--beat-phase) * 100%)
+    );
+}
+
+/* Animacja fazy dla zwykłego beatu */
+#metronome.with-phase.beat {
+    border-color: rgba(107,140,255,0.8);
+    background: linear-gradient(
+        to right,
+        var(--metronome-bg) calc(var(--beat-phase) * 100%),
+        rgba(107,140,255,0.1) calc(var(--beat-phase) * 100%)
+    );
+}
+
+/* Dodatkowy wskaźnik fazy - obracająca się linia */
+#metronome.with-phase::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 45%;
+    height: 2px;
+    background-color: currentColor;
+    transform-origin: left center;
+    transform: translateY(-50%) rotate(calc(var(--beat-phase) * 360deg));
+    opacity: 0.5;
+    transition: background-color 0.3s ease;
+}
+
+#metronome.with-phase.downbeat::after {
+    background-color: rgba(255,107,107,0.8);
+    opacity: 0.7;
+}
+
+#metronome.with-phase.beat::after {
+    background-color: rgba(107,140,255,0.8);
+    opacity: 0.7;
 }
 #position {
     font-size: 3.5rem;
